@@ -13,9 +13,10 @@ function HomePage() {
       console.error("Logout error:", err);
     } finally {
       // Clear localStorage
+      localStorage.removeItem("eventure_token");
       localStorage.removeItem("eventure_user");
       // Redirect to login
-      navigate("/login");
+      navigate("/login", { replace: true });
     }
   };
 

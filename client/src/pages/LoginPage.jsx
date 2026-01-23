@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { login } from "../api";
 
 function LoginPage() {
@@ -8,6 +8,16 @@ function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const registered = location.state?.registered === true;
+
+  // Redirect if already logged in
+  useEffect(() => {
+    const token = localStorage.getItem("eventure_token");
+    if (token) {
+      navigate("/", { replace: true });
+    }
+  }, [navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -15,13 +25,22 @@ function LoginPage() {
     setLoading(true);
 
     try {
-      const data = await login(email, password);
-      // Save user to localStorage
-      localStorage.setItem("eventure_user", JSON.stringify(data.user));
+      const data = await login(email.trim().toLowerCase(), password);
+      
+      // Save token and user to localStorage
+      if (data.token) {
+        localStorage.setItem("eventure_token", data.token);
+      }
+      if (data.user) {
+        localStorage.setItem("eventure_user", JSON.stringify(data.user));
+      }
+      
       // Navigate to home
-      navigate("/");
+      navigate("/", { replace: true });
     } catch (err) {
-      setError(err.message || "Login failed");
+      // Show user-friendly error message
+      const errorMessage = err.message || "Login failed. Please check your credentials and try again.";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -34,6 +53,12 @@ function LoginPage() {
           <h1 className="text-2xl text-[#0f172b] text-center">Eventure</h1>
           <h2 className="text-base text-[#45556c] text-center font-normal">Login</h2>
         </div>
+
+        {registered && (
+          <div className="bg-green-50 text-[#2e6b4e] p-3 rounded-lg text-center text-sm" role="status">
+            Account created. Sign in to continue.
+          </div>
+        )}
 
         {error && (
           <div className="bg-red-50 text-red-600 p-3 rounded-lg text-center text-sm">

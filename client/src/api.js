@@ -1,12 +1,34 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const baseUrl = `${API_URL}/api`;
 
-const fetchOptions = {
-  headers: {
+// Get authentication token from localStorage
+function getAuthToken() {
+  return localStorage.getItem("eventure_token");
+}
+
+// Build fetch options with Authorization header if token exists
+function getFetchOptions(customOptions = {}) {
+  const token = getAuthToken();
+  const headers = {
     "Content-Type": "application/json",
-  },
-  credentials: "include",
-};
+    ...customOptions.headers,
+  };
+
+  // Attach Authorization header if token exists
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return {
+    ...customOptions,
+    headers,
+    credentials: "include",
+  };
+}
+
+function normalizeEmail(email) {
+  return String(email ?? "").trim().toLowerCase();
+}
 
 async function handleResponse(response) {
   const contentType = response.headers.get("content-type");
@@ -26,10 +48,11 @@ async function handleResponse(response) {
 
 export async function login(email, password) {
   try {
+    const emailNormalized = normalizeEmail(email);
     const response = await fetch(`${baseUrl}/auth/login`, {
-      ...fetchOptions,
+      ...getFetchOptions(),
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email: emailNormalized, password }),
     });
 
     return await handleResponse(response);
@@ -41,12 +64,16 @@ export async function login(email, password) {
   }
 }
 
-export async function register({ email, password, firstName, lastName }) {
+export async function register({ firstName, lastName, email, password, role }) {
   try {
+    const emailNormalized = normalizeEmail(email);
+    const body = { firstName, lastName, email: emailNormalized, password };
+    if (role) body.role = role;
+
     const response = await fetch(`${baseUrl}/auth/register`, {
-      ...fetchOptions,
+      ...getFetchOptions(),
       method: "POST",
-      body: JSON.stringify({ email, password, firstName, lastName }),
+      body: JSON.stringify(body),
     });
 
     return await handleResponse(response);
@@ -61,7 +88,7 @@ export async function register({ email, password, firstName, lastName }) {
 export async function logout() {
   try {
     const response = await fetch(`${baseUrl}/auth/logout`, {
-      ...fetchOptions,
+      ...getFetchOptions(),
       method: "POST",
     });
 
@@ -73,3 +100,6 @@ export async function logout() {
     throw error;
   }
 }
+
+// Export getFetchOptions for use in other API calls
+export { getFetchOptions };

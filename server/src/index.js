@@ -3,7 +3,7 @@ const express = require("express");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
 
-const connectDB = require("./config/db");
+const sequelize = require("./db");
 const authRoutes = require("./routes/authRoutes");
 
 const app = express();
@@ -15,8 +15,8 @@ if (!process.env.JWT_SECRET) {
   process.exit(1);
 }
 
-if (!process.env.MONGO_URI) {
-  console.error("ERROR: MONGO_URI environment variable is required");
+if (!process.env.DB_NAME) {
+  console.error("ERROR: DB_NAME environment variable is required");
   process.exit(1);
 }
 
@@ -50,8 +50,7 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
-// Handle OPTIONS preflight requests
-app.options("*", cors(corsOptions));
+// Handle OPTIONS preflight requests - CORS middleware already handles this
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -70,12 +69,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: "Internal server error" });
 });
 
-// Connect to MongoDB and start server
+// Connect to MySQL and start server
 (async () => {
   try {
-    console.log("Attempting to connect to MongoDB...");
-    await connectDB();
-    console.log("MongoDB connected successfully");
+    console.log("Attempting to connect to MySQL database...");
+    await sequelize.authenticate();
+    console.log("MySQL database connected successfully");
     
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
@@ -84,14 +83,11 @@ app.use((err, req, res, next) => {
   } catch (error) {
     console.error("Failed to start server:");
     console.error("Error details:", error.message);
-    if (error.message.includes("MONGO_URI")) {
-      console.error("Please check your .env file and ensure MONGO_URI is set correctly");
-    } else if (error.message.includes("authentication failed") || error.message.includes("connection")) {
-      console.error("MongoDB connection failed. Please check:");
-      console.error("1. Your MongoDB Atlas connection string is correct");
-      console.error("2. Your IP address is whitelisted in MongoDB Atlas");
-      console.error("3. Your network connection is working");
-    }
+    console.error("MySQL connection failed. Please check:");
+    console.error("1. Your MySQL server is running");
+    console.error("2. Your database credentials are correct in .env file");
+    console.error("3. The database 'eventure' exists");
+    console.error("4. Your network connection is working");
     process.exit(1);
   }
 })();
