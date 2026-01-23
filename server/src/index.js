@@ -5,6 +5,9 @@ const cors = require("cors");
 
 const sequelize = require("./db");
 const authRoutes = require("./routes/authRoutes");
+const eventsRoutes = require("./routes/eventsRoutes");
+const devRoutes = require("./routes/devRoutes");
+const { verifyTransport } = require("./utils/mailer");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -60,6 +63,14 @@ app.get("/health", (req, res) => {
 // Auth routes
 app.use("/api", authRoutes);
 
+// Events routes
+app.use("/api/events", eventsRoutes);
+
+// Dev routes (only in development)
+if (process.env.NODE_ENV !== "production") {
+  app.use("/api", devRoutes);
+}
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error("Error:", err);
@@ -75,6 +86,9 @@ app.use((err, req, res, next) => {
     console.log("Attempting to connect to MySQL database...");
     await sequelize.authenticate();
     console.log("MySQL database connected successfully");
+    
+    // Verify SMTP transport
+    await verifyTransport();
     
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);

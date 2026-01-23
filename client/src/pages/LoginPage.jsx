@@ -10,6 +10,7 @@ function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const registered = location.state?.registered === true;
+  const resetSuccess = location.state?.resetSuccess === true;
 
   // Redirect if already logged in
   useEffect(() => {
@@ -35,8 +36,8 @@ function LoginPage() {
         localStorage.setItem("eventure_user", JSON.stringify(data.user));
       }
       
-      // Navigate to home
-      navigate("/", { replace: true });
+      // Navigate to dashboard
+      navigate("/dashboard", { replace: true });
     } catch (err) {
       // Show user-friendly error message
       const errorMessage = err.message || "Login failed. Please check your credentials and try again.";
@@ -57,6 +58,12 @@ function LoginPage() {
         {registered && (
           <div className="bg-green-50 text-[#2e6b4e] p-3 rounded-lg text-center text-sm" role="status">
             Account created. Sign in to continue.
+          </div>
+        )}
+
+        {resetSuccess && (
+          <div className="bg-green-50 text-[#2e6b4e] p-3 rounded-lg text-center text-sm" role="status">
+            Password updated. Sign in to continue.
           </div>
         )}
 
@@ -106,7 +113,7 @@ function LoginPage() {
               <span className="text-base text-[#314158]">Remember me</span>
             </label>
             <Link
-              to="#"
+              to="/forgot-password"
               className="text-base text-[#2e6b4e] hover:underline"
             >
               Forgot password?

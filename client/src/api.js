@@ -101,5 +101,133 @@ export async function logout() {
   }
 }
 
+export async function forgotPassword(email) {
+  try {
+    const emailNormalized = normalizeEmail(email);
+    const response = await fetch(`${baseUrl}/auth/forgot-password`, {
+      ...getFetchOptions(),
+      method: "POST",
+      body: JSON.stringify({ email: emailNormalized }),
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function resetPasswordWithCode(email, code, newPassword) {
+  try {
+    const emailNormalized = normalizeEmail(email);
+    const response = await fetch(`${baseUrl}/auth/reset-password-with-code`, {
+      ...getFetchOptions(),
+      method: "POST",
+      body: JSON.stringify({
+        email: emailNormalized,
+        code: String(code),
+        newPassword,
+      }),
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// Verify reset code
+export async function verifyResetCode({ email, code }) {
+  try {
+    const emailNormalized = normalizeEmail(email);
+    const response = await fetch(`${baseUrl}/auth/verify-reset-code`, {
+      ...getFetchOptions(),
+      method: "POST",
+      body: JSON.stringify({
+        email: emailNormalized,
+        code: String(code),
+      }),
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// Reset password using /api/auth/reset-password endpoint
+export async function resetPassword({ email, code, newPassword }) {
+  try {
+    const emailNormalized = normalizeEmail(email);
+    const response = await fetch(`${baseUrl}/auth/reset-password`, {
+      ...getFetchOptions(),
+      method: "POST",
+      body: JSON.stringify({
+        email: emailNormalized,
+        code: String(code),
+        newPassword,
+      }),
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+function toQueryString(params) {
+  const usp = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    usp.set(key, String(value));
+  });
+  const qs = usp.toString();
+  return qs ? `?${qs}` : "";
+}
+
+// Fetch events
+export async function getEvents(params) {
+  try {
+    const response = await fetch(`${baseUrl}/events${toQueryString(params)}`, {
+      ...getFetchOptions(),
+      method: "GET",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function getEventById(id) {
+  try {
+    const response = await fetch(`${baseUrl}/events/${id}`, {
+      ...getFetchOptions(),
+      method: "GET",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
 // Export getFetchOptions for use in other API calls
 export { getFetchOptions };
