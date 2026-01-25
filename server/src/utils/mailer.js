@@ -12,15 +12,15 @@ function logSmtpConfig() {
   const hasPass = !!process.env.SMTP_PASS;
   const hasFrom = !!process.env.SMTP_FROM;
 
-  console.log("\n📧 SMTP Configuration:");
-  console.log(`   SMTP_HOST present: ${hasHost}`);
-  console.log(`   SMTP_PORT present: ${hasPort}`);
-  console.log(`   SMTP_USER present: ${hasUser}`);
-  console.log(`   SMTP_PASS present: ${hasPass}`);
-  console.log(`   SMTP_FROM present: ${hasFrom}`);
-  console.log(`   NODE_ENV: ${process.env.NODE_ENV || "development"}`);
-  console.log(`   PORT: ${process.env.PORT || 5000}`);
-  console.log("");
+  // SMTP configuration check (logged only in development)
+  if (process.env.NODE_ENV !== "production") {
+    console.log("\n📧 SMTP Configuration:");
+    console.log(`   SMTP_HOST present: ${hasHost}`);
+    console.log(`   SMTP_PORT present: ${hasPort}`);
+    console.log(`   SMTP_USER present: ${hasUser}`);
+    console.log(`   SMTP_PASS present: ${hasPass}`);
+    console.log(`   SMTP_FROM present: ${hasFrom}`);
+  }
 }
 
 // Initialize transporter
@@ -118,11 +118,11 @@ async function sendMail({ to, subject, text, html }) {
       console.error("   Response Code:", error.responseCode);
     }
     // Still log to console as fallback
-    console.log("\n📧 [FALLBACK] Email content:");
-    console.log(`   To: ${to}`);
-    console.log(`   Subject: ${subject}`);
-    console.log(`   Text: ${text}`);
-    console.log("");
+    // In development, log email details for testing
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`\n📧 [FALLBACK] Email would be sent to: ${to}`);
+      console.log(`   Subject: ${subject}`);
+    }
     return { ok: false, mode: "fallback", error: error.message };
   }
 }

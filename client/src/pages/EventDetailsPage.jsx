@@ -1,6 +1,8 @@
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { getEventById } from "../api";
+import { getEventById, checkFavorite, addFavorite, removeFavorite, rsvpToEvent, cancelRSVP, checkRSVPStatus } from "../api";
+import EventMap from "../components/EventMap";
+import { getUserRole } from "../utils/auth";
 
 function formatEventDate(dateString) {
   if (!dateString) return "";
@@ -50,10 +52,14 @@ function buildFullAddress(event) {
 
 function EventDetailsPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [isFavorited, setIsFavorited] = useState(false);
+  const [isRsvped, setIsRsvped] = useState(false);
+  const [rsvpLoading, setRsvpLoading] = useState(false);
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   useEffect(() => {
     const load = async () => {
@@ -62,6 +68,24 @@ function EventDetailsPage() {
         setError("");
         const data = await getEventById(id);
         setEvent(data);
+        
+        // Check if event is favorited
+        try {
+          const favoriteCheck = await checkFavorite(id);
+          setIsFavorited(favoriteCheck.isFavorited);
+        } catch (err) {
+          // If not authenticated, default to false
+          setIsFavorited(false);
+        }
+
+        // Check RSVP status
+        try {
+          const rsvpCheck = await checkRSVPStatus(id);
+          setIsRsvped(rsvpCheck.isRsvped);
+        } catch (err) {
+          // If not authenticated, default to false
+          setIsRsvped(false);
+        }
       } catch (err) {
         console.error("Failed to fetch event:", err);
         setError(err.message || "Failed to load event");
@@ -74,13 +98,50 @@ function EventDetailsPage() {
     load();
   }, [id]);
 
-  const handleFavoriteClick = () => {
-    setIsFavorited(!isFavorited);
+  const handleFavoriteClick = async () => {
+    try {
+      const willBeFavorited = !isFavorited;
+      if (willBeFavorited) {
+        await addFavorite(id);
+      } else {
+        await removeFavorite(id);
+      }
+      setIsFavorited(willBeFavorited);
+    } catch (err) {
+      console.error("Failed to update favorite:", err);
+      // Optionally show error message to user
+    }
   };
 
-  const handleRSVP = () => {
-    // RSVP functionality will be implemented later
-    console.log("RSVP clicked");
+  const handleRSVP = async () => {
+    // Check if user is authenticated
+    const token = localStorage.getItem("eventure_token");
+    if (!token) {
+      navigate("/login", { state: { returnTo: `/events/${id}` } });
+      return;
+    }
+
+    try {
+      setRsvpLoading(true);
+      if (isRsvped) {
+        await cancelRSVP(id);
+        setIsRsvped(false);
+        // Refresh event to update RSVP count
+        const updatedEvent = await getEventById(id);
+        setEvent(updatedEvent);
+      } else {
+        await rsvpToEvent(id);
+        setIsRsvped(true);
+        // Refresh event to update RSVP count
+        const updatedEvent = await getEventById(id);
+        setEvent(updatedEvent);
+      }
+    } catch (err) {
+      console.error("Failed to update RSVP:", err);
+      alert(err.message || "Failed to update RSVP. Please try again.");
+    } finally {
+      setRsvpLoading(false);
+    }
   };
 
   if (loading) {
@@ -114,13 +175,110 @@ function EventDetailsPage() {
   const dateText = formatEventDate(event.starts_at);
   const timeText = formatEventTimeRange(event.starts_at, event.ends_at);
 
+  // Collect all available images (main_image + image_2, image_3, image_4)
+  const allImages = [
+    event.main_image,
+    event.image_2,
+    event.image_3,
+    event.image_4,
+  ].filter(Boolean); // Remove null/undefined values
+
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+  const getImageUrl = (imagePath) => {
+    if (!imagePath) return null;
+    if (imagePath.startsWith("http")) return imagePath;
+    return `${API_URL}${imagePath}`;
+  };
+
+  const nextImage = () => {
+    if (allImages.length > 0) {
+      setCurrentImageIndex((prev) => (prev + 1) % allImages.length);
+    }
+  };
+
+  const prevImage = () => {
+    if (allImages.length > 0) {
+      setCurrentImageIndex((prev) => (prev - 1 + allImages.length) % allImages.length);
+    }
+  };
+
   return (
     <div className="font-[Arimo,sans-serif]">
       {/* Main Content */}
       <div className="max-w-[1120px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Hero/Banner Area */}
-        <div className="relative w-full h-80 rounded-[14px] overflow-hidden mb-6 bg-gradient-to-br from-[#2e6b4e] to-[#255a43] flex items-center justify-center">
-          <span className="text-white/70 text-lg">Event Image</span>
+        {/* Hero/Banner Area with Image Slideshow */}
+        <div className="relative w-full h-80 rounded-[14px] overflow-hidden mb-6 bg-gradient-to-br from-[#2e6b4e] to-[#255a43]">
+          {allImages.length > 0 ? (
+            <>
+              <img
+                src={getImageUrl(allImages[currentImageIndex])}
+                alt={event.title}
+                className="w-full h-full object-cover"
+              />
+              {/* Navigation arrows (only show if more than 1 image) */}
+              {allImages.length > 1 && (
+                <>
+                  <button
+                    onClick={prevImage}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors"
+                    aria-label="Previous image"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="24"
+                      height="24"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="15 18 9 12 15 6" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={nextImage}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors"
+                    aria-label="Next image"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="24"
+                      height="24"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </button>
+                  {/* Image indicators */}
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+                    {allImages.map((_, index) => (
+                      <button
+                        key={index}
+                        onClick={() => setCurrentImageIndex(index)}
+                        className={`h-2 rounded-full transition-all ${
+                          index === currentImageIndex
+                            ? "w-8 bg-white"
+                            : "w-2 bg-white/50 hover:bg-white/75"
+                        }`}
+                        aria-label={`Go to image ${index + 1}`}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <span className="text-white/70 text-lg">Event Image</span>
+            </div>
+          )}
         </div>
 
         {/* Title and Category */}
@@ -196,13 +354,52 @@ function EventDetailsPage() {
             <span className="font-medium">{addressText}</span>
           </div>
 
-          {/* Action Area: RSVP Button */}
+          {/* Action Area: RSVP Button and Attendance */}
           <div className="pt-4 border-t border-[#e2e8f0]">
+            {/* Attendance Count */}
+            {event.capacity && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between text-sm text-[#45556c] mb-2">
+                  <span className="font-medium">Attending</span>
+                  <span>
+                    {event.rsvp_count || 0} / {event.capacity}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-[#2e6b4e] h-2 rounded-full transition-all"
+                    style={{
+                      width: `${Math.min(((event.rsvp_count || 0) / event.capacity) * 100, 100)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+            {!event.capacity && (event.rsvp_count > 0) && (
+              <div className="mb-4 text-sm text-[#45556c]">
+                <span className="font-medium">{event.rsvp_count}</span> attending
+              </div>
+            )}
+            
             <button
               onClick={handleRSVP}
-              className="w-full px-6 py-3 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] transition-colors text-base"
+              disabled={rsvpLoading}
+              className={`w-full px-6 py-3 rounded-lg font-medium transition-colors text-base ${
+                isRsvped
+                  ? "bg-red-500 text-white hover:bg-red-600"
+                  : "bg-[#2e6b4e] text-white hover:bg-[#255a43]"
+              } ${rsvpLoading ? "opacity-50 cursor-not-allowed" : ""}`}
             >
-              RSVP
+              {rsvpLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  {isRsvped ? "Cancelling..." : "RSVPing..."}
+                </span>
+              ) : isRsvped ? (
+                "Cancel RSVP"
+              ) : (
+                "RSVP"
+              )}
             </button>
           </div>
         </div>
@@ -219,40 +416,29 @@ function EventDetailsPage() {
         <div className="bg-white border border-[#e2e8f0] rounded-[14px] shadow-sm p-6 mb-6">
           <h2 className="text-xl font-semibold text-[#0f172b] mb-4">Organizer</h2>
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-full bg-[#2e6b4e] flex items-center justify-center text-white font-bold text-lg shrink-0">
-              E
-            </div>
+            <img 
+              src="/eventure-logo.png" 
+              alt="Eventure" 
+              className="h-12 w-auto shrink-0"
+            />
             <div>
-              <p className="font-medium text-[#0f172b]">Eventure</p>
               <p className="text-sm text-[#45556c]">Organizer details coming soon</p>
             </div>
           </div>
         </div>
 
-        {/* Map/Location Placeholder Card */}
+        {/* Map/Location Card */}
         <div className="bg-white border border-[#e2e8f0] rounded-[14px] shadow-sm p-6">
           <h2 className="text-xl font-semibold text-[#0f172b] mb-4">Location</h2>
-          <div className="w-full h-64 bg-gray-100 rounded-lg flex items-center justify-center border border-[#cad5e2]">
-            <div className="text-center">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="48"
-                height="48"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#62748e"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="mx-auto mb-2"
-              >
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                <circle cx="12" cy="10" r="3" />
-              </svg>
-              <p className="text-sm text-[#45556c]">{addressText}</p>
-              <p className="text-xs text-[#62748e] mt-1">Map view coming soon</p>
-            </div>
-          </div>
+          <EventMap
+            address={event.address_line1}
+            venue={event.venue}
+            city={event.city}
+            state={event.state}
+            zipCode={event.zip_code}
+            lat={event.lat}
+            lng={event.lng}
+          />
         </div>
       </div>
     </div>

@@ -23,13 +23,14 @@ function NavBar() {
   return (
     <header className="bg-white border-b border-[#e2e8f0] sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-20">
           {/* Logo */}
-          <Link to={isLoggedIn ? "/" : "/browse"} className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-[#2e6b4e] flex items-center justify-center text-white font-bold text-sm shrink-0">
-              E
-            </div>
-            <span className="text-xl font-semibold text-[#2e6b4e]">Eventure</span>
+          <Link to={isLoggedIn ? "/" : "/browse"} className="flex items-center">
+            <img 
+              src="/eventure-logo.png" 
+              alt="Eventure" 
+              className="h-14 w-auto shrink-0"
+            />
           </Link>
 
           {/* Navigation Links */}
@@ -62,6 +63,20 @@ function NavBar() {
                 >
                   My Events
                 </Link>
+                <Link
+                  to="/my-account"
+                  className="text-sm font-medium text-[#62748e] hover:text-[#2e6b4e] transition-colors"
+                >
+                  My Account
+                </Link>
+                {user.role === "admin" && (
+                  <Link
+                    to="/admin"
+                    className="text-sm font-medium text-[#2e6b4e] hover:text-[#255a43] transition-colors"
+                  >
+                    Admin Control Panel
+                  </Link>
+                )}
               </>
             )}
           </nav>

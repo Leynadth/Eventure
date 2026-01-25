@@ -6,6 +6,10 @@ const cors = require("cors");
 const sequelize = require("./db");
 const authRoutes = require("./routes/authRoutes");
 const eventsRoutes = require("./routes/eventsRoutes");
+const favoritesRoutes = require("./routes/favoritesRoutes");
+const rsvpRoutes = require("./routes/rsvpRoutes");
+const uploadRoutes = require("./routes/uploadRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 const devRoutes = require("./routes/devRoutes");
 const { verifyTransport } = require("./utils/mailer");
 
@@ -53,6 +57,10 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
+// Serve static files from uploads directory
+const path = require("path");
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+
 // Handle OPTIONS preflight requests - CORS middleware already handles this
 
 // Health check endpoint
@@ -65,6 +73,18 @@ app.use("/api", authRoutes);
 
 // Events routes
 app.use("/api/events", eventsRoutes);
+
+// Favorites routes
+app.use("/api/favorites", favoritesRoutes);
+
+// RSVP routes
+app.use("/api/rsvp", rsvpRoutes);
+
+// Upload routes
+app.use("/api/upload", uploadRoutes);
+
+// Admin routes
+app.use("/api/admin", adminRoutes);
 
 // Dev routes (only in development)
 if (process.env.NODE_ENV !== "production") {

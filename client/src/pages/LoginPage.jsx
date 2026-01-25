@@ -51,7 +51,13 @@ function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-5 font-['Arimo',sans-serif]">
       <div className="w-full max-w-[382px] bg-white border border-[#e2e8f0] rounded-2xl shadow-[0px_10px_15px_-3px_rgba(0,0,0,0.1),0px_4px_6px_-4px_rgba(0,0,0,0.1)] p-[33px] flex flex-col gap-6">
         <div className="flex flex-col gap-6">
-          <h1 className="text-2xl text-[#0f172b] text-center">Eventure</h1>
+          <div className="flex items-center justify-center">
+            <img 
+              src="/eventure-logo.png" 
+              alt="Eventure" 
+              className="h-14 w-auto"
+            />
+          </div>
           <h2 className="text-base text-[#45556c] text-center font-normal">Login</h2>
         </div>
 

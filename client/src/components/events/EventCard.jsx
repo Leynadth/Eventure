@@ -1,19 +1,52 @@
-import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-function EventCard({ title, date, location, category, price, imageUrl, viewMode = "grid" }) {
-  const [isFavorited, setIsFavorited] = useState(false);
+function EventCard({ 
+  title, 
+  date, 
+  location, 
+  category, 
+  price, 
+  imageUrl, 
+  viewMode = "grid",
+  eventId,
+  isFavorited = false,
+  isRsvped = false,
+  onFavoriteClick,
+  attendance,
+  isFeatured = false,
+  capacity = null,
+  rsvpCount = 0
+}) {
   const isFree = price === 0 || price === null || price === undefined;
+  
+  // Ensure capacity and rsvpCount are numbers
+  // Handle null, undefined, empty string, or string "0"
+  let capacityNum = null;
+  if (capacity !== null && capacity !== undefined && capacity !== "" && capacity !== "0") {
+    const parsed = parseInt(capacity, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      capacityNum = parsed;
+    }
+  }
+  
+  const rsvpCountNum = rsvpCount !== null && rsvpCount !== undefined ? parseInt(rsvpCount, 10) : 0;
 
   const handleFavoriteClick = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsFavorited(!isFavorited);
+    if (onFavoriteClick && eventId) {
+      onFavoriteClick(eventId, !isFavorited);
+    }
   };
 
+  const navigate = useNavigate();
+  
   const handleRSVPClick = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    // RSVP functionality will be implemented later
+    if (eventId) {
+      navigate(`/events/${eventId}`);
+    }
   };
 
   if (viewMode === "list") {
@@ -112,15 +145,44 @@ function EventCard({ title, date, location, category, price, imageUrl, viewMode 
               )}
             </div>
 
+            {/* Attendance Progress Bar */}
+            {capacityNum && capacityNum > 0 ? (
+              <div className="mb-3">
+                <div className="flex items-center justify-between text-xs text-[#45556c] mb-1">
+                  <span className="font-medium">Attending</span>
+                  <span>{rsvpCountNum} / {capacityNum}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-[#2e6b4e] h-2 rounded-full transition-all"
+                    style={{
+                      width: `${Math.min((rsvpCountNum / capacityNum) * 100, 100)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ) : rsvpCountNum > 0 ? (
+              <div className="mb-3">
+                <div className="flex items-center justify-between text-xs text-[#45556c] mb-1">
+                  <span className="font-medium">Attending</span>
+                  <span>{rsvpCountNum}</span>
+                </div>
+              </div>
+            ) : null}
+
             <div className="flex items-center justify-between mt-auto">
               <div className="text-lg font-semibold text-[#0f172b]">
                 {isFree ? "Free" : `$${price}`}
               </div>
               <button
                 onClick={handleRSVPClick}
-                className="px-4 py-2 bg-[#2e6b4e] text-white rounded-lg text-sm font-medium hover:bg-[#255a43] transition-colors"
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isRsvped
+                    ? "bg-red-500 text-white hover:bg-red-600"
+                    : "bg-[#2e6b4e] text-white hover:bg-[#255a43]"
+                }`}
               >
-                RSVP
+                {isRsvped ? "Attending" : "RSVP"}
               </button>
             </div>
           </div>
@@ -218,15 +280,45 @@ function EventCard({ title, date, location, category, price, imageUrl, viewMode 
             {location}
           </p>
         )}
+        
+        {/* Attendance Progress Bar */}
+        {capacityNum && capacityNum > 0 ? (
+          <div className="mb-2">
+            <div className="flex items-center justify-between text-xs text-[#45556c] mb-1">
+              <span className="font-medium">Attending</span>
+              <span>{rsvpCountNum} / {capacityNum}</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className="bg-[#2e6b4e] h-2 rounded-full transition-all"
+                style={{
+                  width: `${Math.min((rsvpCountNum / capacityNum) * 100, 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+        ) : rsvpCountNum > 0 ? (
+          <div className="mb-2">
+            <div className="flex items-center justify-between text-xs text-[#45556c] mb-1">
+              <span className="font-medium">Attending</span>
+              <span>{rsvpCountNum}</span>
+            </div>
+          </div>
+        ) : null}
+
         <div className="flex items-center justify-between mt-auto pt-2">
           <div className="text-base font-semibold text-[#0f172b]">
             {isFree ? "Free" : `$${price}`}
           </div>
           <button
             onClick={handleRSVPClick}
-            className="px-4 py-2 bg-[#2e6b4e] text-white rounded-lg text-sm font-medium hover:bg-[#255a43] transition-colors"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              isRsvped
+                ? "bg-red-500 text-white hover:bg-red-600"
+                : "bg-[#2e6b4e] text-white hover:bg-[#255a43]"
+            }`}
           >
-            RSVP
+            {isRsvped ? "Attending" : "RSVP"}
           </button>
         </div>
       </div>

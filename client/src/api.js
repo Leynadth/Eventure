@@ -163,6 +163,113 @@ export async function verifyResetCode({ email, code }) {
   }
 }
 
+// Profile API functions
+export async function getProfile() {
+  try {
+    const response = await fetch(`${baseUrl}/auth/profile`, {
+      ...getFetchOptions(),
+      method: "GET",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// Change Password API functions
+export async function requestChangePasswordCode() {
+  try {
+    const response = await fetch(`${baseUrl}/auth/change-password-request`, {
+      ...getFetchOptions(),
+      method: "POST",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function changePassword(code, newPassword) {
+  try {
+    const response = await fetch(`${baseUrl}/auth/change-password`, {
+      ...getFetchOptions(),
+      method: "POST",
+      body: JSON.stringify({
+        code: String(code),
+        newPassword,
+      }),
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// Delete Account API functions
+export async function requestDeleteAccountCode() {
+  try {
+    const response = await fetch(`${baseUrl}/auth/delete-account-request`, {
+      ...getFetchOptions(),
+      method: "POST",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function deleteAccount(code) {
+  try {
+    const response = await fetch(`${baseUrl}/auth/delete-account`, {
+      ...getFetchOptions(),
+      method: "POST",
+      body: JSON.stringify({
+        code: String(code),
+      }),
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// Get all categories
+export async function getCategories() {
+  try {
+    const response = await fetch(`${baseUrl}/events/categories`, {
+      ...getFetchOptions(),
+      method: "GET",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
 // Reset password using /api/auth/reset-password endpoint
 export async function resetPassword({ email, code, newPassword }) {
   try {
@@ -220,6 +327,367 @@ export async function getEventById(id) {
       method: "GET",
     });
 
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// Favorites API functions
+export async function getFavorites() {
+  try {
+    const response = await fetch(`${baseUrl}/favorites`, {
+      ...getFetchOptions(),
+      method: "GET",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function addFavorite(eventId) {
+  try {
+    const eventIdNum = parseInt(eventId, 10);
+    if (isNaN(eventIdNum)) {
+      throw new Error("Invalid event ID");
+    }
+    
+    const response = await fetch(`${baseUrl}/favorites/${eventIdNum}`, {
+      ...getFetchOptions(),
+      method: "POST",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function removeFavorite(eventId) {
+  try {
+    const eventIdNum = parseInt(eventId, 10);
+    if (isNaN(eventIdNum)) {
+      throw new Error("Invalid event ID");
+    }
+    
+    const response = await fetch(`${baseUrl}/favorites/${eventIdNum}`, {
+      ...getFetchOptions(),
+      method: "DELETE",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function checkFavorite(eventId) {
+  try {
+    const eventIdNum = parseInt(eventId, 10);
+    if (isNaN(eventIdNum)) {
+      throw new Error("Invalid event ID");
+    }
+    
+    const response = await fetch(`${baseUrl}/favorites/check/${eventIdNum}`, {
+      ...getFetchOptions(),
+      method: "GET",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function clearAllFavorites() {
+  try {
+    const response = await fetch(`${baseUrl}/favorites`, {
+      ...getFetchOptions(),
+      method: "DELETE",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// My Events API functions
+export async function getMyEvents() {
+  try {
+    const response = await fetch(`${baseUrl}/events/my`, {
+      ...getFetchOptions(),
+      method: "GET",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function getAttendingEvents() {
+  try {
+    const response = await fetch(`${baseUrl}/events/attending`, {
+      ...getFetchOptions(),
+      method: "GET",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// deleteEvent for organizers (delete their own events)
+export async function deleteEvent(eventId) {
+  try {
+    const eventIdNum = parseInt(eventId, 10);
+    if (isNaN(eventIdNum)) {
+      throw new Error("Invalid event ID");
+    }
+    
+    const response = await fetch(`${baseUrl}/events/${eventIdNum}`, {
+      ...getFetchOptions(),
+      method: "DELETE",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// Upload Event Image API function
+export async function uploadEventImage(imageFile) {
+  try {
+    const formData = new FormData();
+    formData.append("image", imageFile);
+
+    const token = getAuthToken();
+    const headers = {};
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${baseUrl}/upload/event-image`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: formData,
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// Create Event API function
+export async function createEvent(eventData) {
+  try {
+    const response = await fetch(`${baseUrl}/events`, {
+      ...getFetchOptions(),
+      method: "POST",
+      body: JSON.stringify(eventData),
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// Update Event API function
+export async function updateEvent(eventId, eventData) {
+  try {
+    const response = await fetch(`${baseUrl}/events/${eventId}`, {
+      ...getFetchOptions(),
+      method: "PUT",
+      body: JSON.stringify(eventData),
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// RSVP API functions
+export async function rsvpToEvent(eventId) {
+  try {
+    const response = await fetch(`${baseUrl}/rsvp/${eventId}`, {
+      ...getFetchOptions(),
+      method: "POST",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function cancelRSVP(eventId) {
+  try {
+    const response = await fetch(`${baseUrl}/rsvp/${eventId}`, {
+      ...getFetchOptions(),
+      method: "DELETE",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function checkRSVPStatus(eventId) {
+  try {
+    const response = await fetch(`${baseUrl}/rsvp/${eventId}`, {
+      ...getFetchOptions(),
+      method: "GET",
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// Admin API functions
+export async function getAdminStats() {
+  try {
+    console.log("Fetching admin stats from:", `${baseUrl}/admin/stats`);
+    const response = await fetch(`${baseUrl}/admin/stats`, {
+      ...getFetchOptions(),
+      method: "GET",
+    });
+    console.log("Stats response status:", response.status, response.statusText);
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
+      console.error("Stats error response:", errorData);
+      throw new Error(errorData.message || `Failed to fetch stats: ${response.status}`);
+    }
+    
+    return await handleResponse(response);
+  } catch (error) {
+    console.error("getAdminStats error:", error);
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function getAllEvents() {
+  try {
+    console.log("Fetching all events from:", `${baseUrl}/admin/events`);
+    const response = await fetch(`${baseUrl}/admin/events`, {
+      ...getFetchOptions(),
+      method: "GET",
+    });
+    console.log("Response status:", response.status, response.statusText);
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
+      console.error("Error response:", errorData);
+      throw new Error(errorData.message || `Failed to fetch events: ${response.status}`);
+    }
+    
+    return await handleResponse(response);
+  } catch (error) {
+    console.error("getAllEvents error:", error);
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function approveEvent(eventId) {
+  try {
+    const response = await fetch(`${baseUrl}/admin/events/${eventId}/approve`, {
+      ...getFetchOptions(),
+      method: "PUT",
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function declineEvent(eventId) {
+  try {
+    const response = await fetch(`${baseUrl}/admin/events/${eventId}/decline`, {
+      ...getFetchOptions(),
+      method: "PUT",
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// Admin deleteEvent - admins can delete any event
+export async function adminDeleteEvent(eventId) {
+  try {
+    const response = await fetch(`${baseUrl}/admin/events/${eventId}`, {
+      ...getFetchOptions(),
+      method: "DELETE",
+    });
     return await handleResponse(response);
   } catch (error) {
     if (error instanceof TypeError && error.message === "Failed to fetch") {

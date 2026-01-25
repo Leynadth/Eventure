@@ -1,16 +1,49 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getEvents } from "../api";
 import EventCard from "../components/events/EventCard";
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+function getImageUrl(imagePath) {
+  if (!imagePath) return null;
+  if (imagePath.startsWith("http")) return imagePath;
+  return `${API_URL}${imagePath}`;
+}
+
+// Preset categories (same as CreateEventPage)
 const CATEGORIES = [
-  { name: "Music", icon: "🎵" },
-  { name: "Food", icon: "🍔" },
-  { name: "Tech", icon: "💻" },
-  { name: "Sports", icon: "⚽" },
-  { name: "Arts", icon: "🎨" },
-  { name: "Business", icon: "💼" },
+  "Music",
+  "Food",
+  "Tech",
+  "Sports",
+  "Arts",
+  "Business",
+  "Campus",
+  "Concerts",
+  "Networking",
+  "Workshop",
+  "Conference",
+  "Festival",
+  "Other",
 ];
+
+// Category icons mapping
+const CATEGORY_ICONS = {
+  Music: "🎵",
+  Food: "🍔",
+  Tech: "💻",
+  Sports: "⚽",
+  Arts: "🎨",
+  Business: "💼",
+  Campus: "🏫",
+  Concerts: "🎤",
+  Networking: "🤝",
+  Workshop: "🔧",
+  Conference: "📊",
+  Festival: "🎪",
+  Other: "📅",
+};
 
 // Format date from database (starts_at) to readable format
 function formatEventDate(dateString) {
@@ -46,6 +79,7 @@ function buildFullAddress(event) {
 }
 
 function HomePage() {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState("");
   const [events, setEvents] = useState([]);
@@ -57,8 +91,15 @@ function HomePage() {
       try {
         setLoading(true);
         setError("");
-        const data = await getEvents({ limit: 3 });
-        setEvents(data || []);
+        
+        // Fetch recently added events - same logic as browse, just limit to 3 and order by created_at DESC
+        const eventsData = await getEvents({ 
+          limit: 3, 
+          orderBy: "created_at", 
+          order: "DESC" 
+        });
+        
+        setEvents(eventsData || []);
       } catch (err) {
         console.error("Failed to fetch events:", err);
         setError(err.message || "Failed to load events");
@@ -71,7 +112,9 @@ function HomePage() {
     fetchEvents();
   }, []);
 
-  const trendingEvents = events;
+  const handleCategoryClick = (category) => {
+    navigate(`/browse?category=${encodeURIComponent(category)}`);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -135,9 +178,9 @@ function HomePage() {
         </div>
       </section>
 
-      {/* Trending Near You */}
+      {/* Recently Added Events */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <h2 className="text-2xl font-bold text-[#0f172b] mb-6">Trending Near You</h2>
+        <h2 className="text-2xl font-bold text-[#0f172b] mb-6">Recently Added Events</h2>
         {loading ? (
           <div className="text-center py-12">
             <p className="text-[#45556c]">Loading events...</p>
@@ -146,13 +189,13 @@ function HomePage() {
           <div className="text-center py-12">
             <p className="text-red-600">{error}</p>
           </div>
-        ) : trendingEvents.length === 0 ? (
+        ) : events.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-[#45556c]">No events available yet</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {trendingEvents.map((event) => (
+            {events.map((event) => (
               <Link
                 key={event.id}
                 to={`/events/${event.id}`}
@@ -163,6 +206,9 @@ function HomePage() {
                   date={formatEventDate(event.starts_at)}
                   location={buildFullAddress(event)}
                   category={event.category}
+                  imageUrl={getImageUrl(event.main_image)}
+                  capacity={event.capacity}
+                  rsvpCount={event.rsvp_count || 0}
                 />
               </Link>
             ))}
@@ -176,16 +222,16 @@ function HomePage() {
           <h2 className="text-2xl font-bold text-[#0f172b] mb-6">Browse by Category</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             {CATEGORIES.map((category) => (
-              <Link
-                key={category.name}
-                to="/browse"
+              <button
+                key={category}
+                onClick={() => handleCategoryClick(category)}
                 className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm p-6 text-center hover:shadow-md hover:border-[#2e6b4e] transition-all group"
               >
-                <div className="text-4xl mb-2">{category.icon}</div>
+                <div className="text-4xl mb-2">{CATEGORY_ICONS[category] || "📅"}</div>
                 <p className="text-sm font-medium text-[#0f172b] group-hover:text-[#2e6b4e] transition-colors">
-                  {category.name}
+                  {category}
                 </p>
-              </Link>
+              </button>
             ))}
           </div>
         </div>
@@ -220,11 +266,12 @@ function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 rounded-full bg-[#2e6b4e] flex items-center justify-center text-white font-bold text-sm">
-                  E
-                </div>
-                <span className="text-lg font-semibold">Eventure</span>
+              <div className="flex items-center mb-4">
+                <img 
+                  src="/eventure-logo.png" 
+                  alt="Eventure" 
+                  className="h-12 w-auto"
+                />
               </div>
               <p className="text-sm text-gray-400">
                 Discover and join amazing events near you.

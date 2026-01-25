@@ -1,47 +1,90 @@
 import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
 import { getUserRole } from "../utils/auth";
 import AppShell from "../components/layout/AppShell";
 import EventCard from "../components/events/EventCard";
+import { getEvents, getMyEvents } from "../api";
 
-// Placeholder events data
-const PLACEHOLDER_EVENTS = [
-  {
-    id: 1,
-    title: "Summer Music Festival 2024",
-    date: "June 15, 2024",
-    location: "Central Park, New York",
-  },
-  {
-    id: 2,
-    title: "Tech Innovation Summit",
-    date: "July 20, 2024",
-    location: "San Francisco Convention Center",
-  },
-  {
-    id: 3,
-    title: "Food & Wine Expo",
-    date: "August 10, 2024",
-    location: "Chicago Navy Pier",
-  },
-];
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-const PLACEHOLDER_MY_EVENTS = [
-  {
-    id: 1,
-    title: "My First Event",
-    date: "June 1, 2024",
-    status: "Published",
-  },
-  {
-    id: 2,
-    title: "Community Meetup",
-    date: "July 5, 2024",
-    status: "Draft",
-  },
-];
+function getImageUrl(imagePath) {
+  if (!imagePath) return null;
+  if (imagePath.startsWith("http")) return imagePath;
+  return `${API_URL}${imagePath}`;
+}
+
+// Format date from database (starts_at) to readable format
+function formatEventDate(dateString) {
+  if (!dateString) return "";
+  const date = new Date(dateString);
+  return date.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function buildFullAddress(event) {
+  const address1 = String(event?.address_line1 ?? "").trim();
+  if (!address1) {
+    return String(event?.location ?? "").trim();
+  }
+
+  const parts = [];
+  const venue = String(event?.venue ?? "").trim();
+  const address2 = String(event?.address_line2 ?? "").trim();
+  const city = String(event?.city ?? "").trim();
+  const state = String(event?.state ?? "").trim();
+  const zip = String(event?.zip_code ?? "").trim();
+
+  if (venue) parts.push(venue);
+  parts.push(address1);
+  if (address2) parts.push(address2);
+  const cityStateZip = [city, state].filter(Boolean).join(", ") + (zip ? ` ${zip}` : "");
+  if (cityStateZip.trim()) parts.push(cityStateZip.trim());
+
+  return parts.join(", ");
+}
 
 function DashboardPage() {
   const role = getUserRole();
+  const [events, setEvents] = useState([]);
+  const [myEvents, setMyEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [myEventsLoading, setMyEventsLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        // Fetch upcoming events for regular users
+        if (role === "user") {
+          const data = await getEvents({ limit: 3 });
+          setEvents(data || []);
+        }
+        // Fetch user's events for organizers
+        if (role === "organizer" || role === "admin") {
+          setMyEventsLoading(true);
+          try {
+            const myData = await getMyEvents();
+            setMyEvents(myData || []);
+          } catch (err) {
+            console.error("Failed to fetch my events:", err);
+            setMyEvents([]);
+          } finally {
+            setMyEventsLoading(false);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch events:", err);
+        setEvents([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [role]);
 
   return (
     <AppShell>
@@ -85,16 +128,37 @@ function DashboardPage() {
               <h2 className="text-2xl font-semibold text-[#0f172b] mb-4">
                 Upcoming Events
               </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {PLACEHOLDER_EVENTS.map((event) => (
-                  <EventCard
-                    key={event.id}
-                    title={event.title}
-                    date={event.date}
-                    location={event.location}
-                  />
-                ))}
-              </div>
+              {loading ? (
+                <div className="text-center py-12">
+                  <p className="text-[#45556c]">Loading events...</p>
+                </div>
+              ) : events.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {events.map((event) => (
+                    <Link
+                      key={event.id}
+                      to={`/events/${event.id}`}
+                      className="focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:rounded-2xl"
+                    >
+                      <EventCard
+                        eventId={parseInt(event.id, 10)}
+                        title={event.title}
+                        date={formatEventDate(event.starts_at)}
+                        location={buildFullAddress(event)}
+                        category={event.category}
+                        price={event.ticket_price}
+                        imageUrl={getImageUrl(event.main_image)}
+                        capacity={event.capacity}
+                        rsvpCount={event.rsvp_count || 0}
+                      />
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm p-12 text-center">
+                  <p className="text-[#45556c]">No upcoming events available</p>
+                </div>
+              )}
             </section>
           </>
         )}
@@ -125,51 +189,43 @@ function DashboardPage() {
               <h2 className="text-2xl font-semibold text-[#0f172b] mb-4">
                 Your Events
               </h2>
-              <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm overflow-hidden">
-                {PLACEHOLDER_MY_EVENTS.length > 0 ? (
-                  <div className="divide-y divide-[#e2e8f0]">
-                    {PLACEHOLDER_MY_EVENTS.map((event) => (
-                      <div
-                        key={event.id}
-                        className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-                      >
-                        <div>
-                          <h3 className="font-medium text-[#0f172b]">
-                            {event.title}
-                          </h3>
-                          <p className="text-sm text-[#45556c] mt-1">
-                            {event.date} • {event.status}
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            disabled
-                            className="px-3 py-1.5 text-sm text-[#62748e] border border-[#cad5e2] rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            View
-                          </button>
-                          <button
-                            disabled
-                            className="px-3 py-1.5 text-sm text-[#2e6b4e] border border-[#2e6b4e] rounded-lg hover:bg-[#2e6b4e] hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            Edit
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="p-8 text-center text-[#45556c]">
-                    <p>You haven't created any events yet.</p>
+              {myEventsLoading ? (
+                <div className="text-center py-12">
+                  <p className="text-[#45556c]">Loading your events...</p>
+                </div>
+              ) : myEvents.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {myEvents.map((event) => (
                     <Link
-                      to="/events/new"
-                      className="mt-4 inline-block text-[#2e6b4e] hover:underline"
+                      key={event.id}
+                      to={`/events/${event.id}`}
+                      className="focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:rounded-2xl"
                     >
-                      Create your first event
+                      <EventCard
+                        eventId={parseInt(event.id, 10)}
+                        title={event.title}
+                        date={formatEventDate(event.starts_at)}
+                        location={buildFullAddress(event)}
+                        category={event.category}
+                        price={event.ticket_price}
+                        imageUrl={getImageUrl(event.main_image)}
+                        capacity={event.capacity}
+                        rsvpCount={event.rsvp_count || 0}
+                      />
                     </Link>
-                  </div>
-                )}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm p-8 text-center">
+                  <p className="text-[#45556c] mb-4">You haven't created any events yet.</p>
+                  <Link
+                    to="/events/new"
+                    className="inline-block px-6 py-3 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] transition-colors"
+                  >
+                    Create your first event
+                  </Link>
+                </div>
+              )}
             </section>
           </>
         )}

@@ -1,97 +1,88 @@
-import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useMemo } from "react";
+import { Link } from "react-router-dom";
 import AppShell from "../components/layout/AppShell";
 import EventCard from "../components/events/EventCard";
+import { getEvents } from "../api";
 
-// Placeholder events data (shared structure with EventDetailsPage)
-export const PLACEHOLDER_EVENTS = [
-  {
-    id: 1,
-    title: "Summer Music Festival 2024",
-    date: "June 15, 2024",
-    location: "Central Park, New York",
-    category: "Music",
-    description: "Join us for an amazing summer music festival featuring top artists from around the world.",
-  },
-  {
-    id: 2,
-    title: "Tech Innovation Summit",
-    date: "July 20, 2024",
-    location: "San Francisco Convention Center",
-    category: "Tech",
-    description: "Explore the latest in technology and innovation with industry leaders and startups.",
-  },
-  {
-    id: 3,
-    title: "Food & Wine Expo",
-    date: "August 10, 2024",
-    location: "Chicago Navy Pier",
-    category: "Food",
-    description: "Taste exquisite cuisine and fine wines from renowned chefs and wineries.",
-  },
-  {
-    id: 4,
-    title: "Jazz Night Under the Stars",
-    date: "June 22, 2024",
-    location: "Riverside Park, New York",
-    category: "Music",
-    description: "Enjoy an evening of smooth jazz performances in a beautiful outdoor setting.",
-  },
-  {
-    id: 5,
-    title: "Startup Pitch Competition",
-    date: "July 5, 2024",
-    location: "Silicon Valley Hub, San Jose",
-    category: "Tech",
-    description: "Watch innovative startups pitch their ideas to investors and win prizes.",
-  },
-  {
-    id: 6,
-    title: "Farmers Market & Food Trucks",
-    date: "August 3, 2024",
-    location: "Downtown Plaza, Seattle",
-    category: "Food",
-    description: "Fresh produce, local vendors, and delicious food trucks all in one place.",
-  },
-  {
-    id: 7,
-    title: "Rock Concert Series",
-    date: "June 30, 2024",
-    location: "Madison Square Garden, New York",
-    category: "Music",
-    description: "Experience electrifying rock performances from legendary bands.",
-  },
-  {
-    id: 8,
-    title: "AI & Machine Learning Workshop",
-    date: "July 15, 2024",
-    location: "Tech Campus, Boston",
-    category: "Tech",
-    description: "Hands-on workshop covering the fundamentals of AI and machine learning.",
-  },
-];
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-const CATEGORIES = ["All", "Music", "Food", "Tech"];
+function getImageUrl(imagePath) {
+  if (!imagePath) return null;
+  if (imagePath.startsWith("http")) return imagePath;
+  return `${API_URL}${imagePath}`;
+}
+
+// Format date from database (starts_at) to readable format
+function formatEventDate(dateString) {
+  if (!dateString) return "";
+  const date = new Date(dateString);
+  return date.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function buildFullAddress(event) {
+  const address1 = String(event?.address_line1 ?? "").trim();
+  if (!address1) {
+    return String(event?.location ?? "").trim();
+  }
+
+  const parts = [];
+  const venue = String(event?.venue ?? "").trim();
+  const address2 = String(event?.address_line2 ?? "").trim();
+  const city = String(event?.city ?? "").trim();
+  const state = String(event?.state ?? "").trim();
+  const zip = String(event?.zip_code ?? "").trim();
+
+  if (venue) parts.push(venue);
+  parts.push(address1);
+  if (address2) parts.push(address2);
+  const cityStateZip = [city, state].filter(Boolean).join(", ") + (zip ? ` ${zip}` : "");
+  if (cityStateZip.trim()) parts.push(cityStateZip.trim());
+
+  return parts.join(", ");
+}
+
+const CATEGORIES = ["All", "Music", "Food", "Tech", "Sports", "Arts"];
 
 function EventsPage() {
-  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        setLoading(true);
+        setError("");
+        const data = await getEvents();
+        setEvents(data || []);
+      } catch (err) {
+        console.error("Failed to fetch events:", err);
+        setError(err.message || "Failed to load events");
+        setEvents([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchEvents();
+  }, []);
 
   const filteredEvents = useMemo(() => {
-    return PLACEHOLDER_EVENTS.filter((event) => {
+    return events.filter((event) => {
       const matchesSearch =
-        event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        event.location.toLowerCase().includes(searchQuery.toLowerCase());
+        event.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        buildFullAddress(event).toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCategory =
         selectedCategory === "All" || event.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
-  }, [searchQuery, selectedCategory]);
-
-  const handleEventClick = (eventId) => {
-    navigate(`/events/${eventId}`);
-  };
+  }, [events, searchQuery, selectedCategory]);
 
   return (
     <AppShell>
@@ -129,20 +120,34 @@ function EventsPage() {
         </div>
 
         {/* Events Grid */}
-        {filteredEvents.length > 0 ? (
+        {loading ? (
+          <div className="text-center py-12">
+            <p className="text-[#45556c]">Loading events...</p>
+          </div>
+        ) : error ? (
+          <div className="text-center py-12">
+            <p className="text-red-600">{error}</p>
+          </div>
+        ) : filteredEvents.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredEvents.map((event) => (
-              <button
+              <Link
                 key={event.id}
-                onClick={() => handleEventClick(event.id)}
-                className="text-left focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:rounded-2xl"
+                to={`/events/${event.id}`}
+                className="focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:rounded-2xl"
               >
                 <EventCard
+                  eventId={parseInt(event.id, 10)}
                   title={event.title}
-                  date={event.date}
-                  location={event.location}
+                  date={formatEventDate(event.starts_at)}
+                  location={buildFullAddress(event)}
+                  category={event.category}
+                  price={event.ticket_price}
+                  imageUrl={getImageUrl(event.main_image)}
+                  capacity={event.capacity}
+                  rsvpCount={event.rsvp_count || 0}
                 />
-              </button>
+              </Link>
             ))}
           </div>
         ) : (

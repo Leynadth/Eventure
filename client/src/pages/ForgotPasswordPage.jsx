@@ -32,12 +32,13 @@ function ForgotPasswordPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-5 font-[Arimo,sans-serif]">
       <div className="w-full max-w-[480px] bg-white border border-[#e2e8f0] rounded-2xl shadow-[0px_10px_15px_-3px_rgba(0,0,0,0.1),0px_4px_6px_-4px_rgba(0,0,0,0.1)] p-8 flex flex-col gap-6">
-        {/* Brand row: logo + Eventure */}
-        <div className="flex items-center justify-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-[#2e6b4e] flex items-center justify-center text-white font-bold text-lg shrink-0">
-            E
-          </div>
-          <span className="text-xl font-semibold text-[#2e6b4e]">Eventure</span>
+        {/* Brand row: logo */}
+        <div className="flex items-center justify-center">
+          <img 
+            src="/eventure-logo.png" 
+            alt="Eventure" 
+            className="h-14 w-auto"
+          />
         </div>
 
         <div className="flex flex-col gap-1 text-center">

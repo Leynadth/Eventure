@@ -12,7 +12,10 @@ import EventDetailsPage from './pages/EventDetailsPage'
 import CreateEventPage from './pages/CreateEventPage'
 import FavoritesPage from './pages/FavoritesPage'
 import MyEventsPage from './pages/MyEventsPage'
+import MyAccountPage from './pages/MyAccountPage'
+import AdminDashboardPage from './pages/AdminDashboardPage'
 import ProtectedRoute from './components/ProtectedRoute'
+import AdminProtectedRoute from './components/AdminProtectedRoute'
 
 function App() {
   return (
@@ -67,6 +70,14 @@ function App() {
           }
         />
         <Route
+          path="/my-account"
+          element={
+            <ProtectedRoute>
+              <MyAccountPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/create"
           element={
             <ProtectedRoute>
@@ -83,6 +94,14 @@ function App() {
           }
         />
         <Route
+          path="/events/:id/edit"
+          element={
+            <ProtectedRoute>
+              <CreateEventPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/dashboard"
           element={
             <ProtectedRoute>
@@ -91,6 +110,16 @@ function App() {
           }
         />
       </Route>
+      
+      {/* Admin routes - outside AppLayout to have full control */}
+      <Route
+        path="/admin"
+        element={
+          <AdminProtectedRoute>
+            <AdminDashboardPage />
+          </AdminProtectedRoute>
+        }
+      />
     </Routes>
   )
 }

@@ -1,9 +1,25 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import { getEvents } from "../api";
+import { Link, useSearchParams } from "react-router-dom";
+import { getEvents, checkFavorite, addFavorite, removeFavorite, checkRSVPStatus } from "../api";
 import EventCard from "../components/events/EventCard";
 
-const CATEGORIES = ["All", "Music", "Food", "Tech", "Sports", "Arts"];
+// Preset categories (same as CreateEventPage)
+const CATEGORIES = [
+  "All",
+  "Music",
+  "Food",
+  "Tech",
+  "Sports",
+  "Arts",
+  "Business",
+  "Campus",
+  "Concerts",
+  "Networking",
+  "Workshop",
+  "Conference",
+  "Festival",
+  "Other",
+];
 
 const RADIUS_OPTIONS = [5, 10, 15, 20, 25, 30, 40, 50];
 
@@ -40,15 +56,26 @@ function buildFullAddress(event) {
   return parts.join(", ");
 }
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+function getImageUrl(imagePath) {
+  if (!imagePath) return null;
+  if (imagePath.startsWith("http")) return imagePath;
+  return `${API_URL}${imagePath}`;
+}
+
 function BrowseEventsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState("");
   const [zipCode, setZipCode] = useState("");
   const [radius, setRadius] = useState(10); // Default 10 miles
-  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [selectedCategory, setSelectedCategory] = useState(searchParams.get("category") || "All");
   const [viewMode, setViewMode] = useState("grid"); // "grid" or "list"
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [favoritesMap, setFavoritesMap] = useState({}); // { eventId: true/false }
+  const [rsvpMap, setRsvpMap] = useState({}); // { eventId: true/false }
 
   // Handle ZIP input - strip non-digits and cap at 5
   const handleZipChange = (e) => {
@@ -60,27 +87,106 @@ function BrowseEventsPage() {
   // Check if ZIP is valid (exactly 5 digits)
   const isValidZip = /^\d{5}$/.test(zipCode);
 
-  // Initial load - fetch all events
+  // Check favorite status for events
+  const checkFavoritesForEvents = async (eventIds) => {
+    // Check if user is authenticated first
+    const token = localStorage.getItem("eventure_token");
+    if (!token) {
+      // Not authenticated, set all to false
+      const newFavoritesMap = {};
+      eventIds.forEach((id) => {
+        newFavoritesMap[id] = false;
+      });
+      setFavoritesMap(newFavoritesMap);
+      return;
+    }
+
+    try {
+      const favoriteChecks = await Promise.all(
+        eventIds.map(async (id) => {
+          try {
+            const result = await checkFavorite(id);
+            return { id, isFavorited: result.isFavorited || false };
+          } catch (err) {
+            // Log error for debugging
+            console.warn(`Failed to check favorite for event ${id}:`, err.message);
+            // If error, default to false
+            return { id, isFavorited: false };
+          }
+        })
+      );
+      
+      const newFavoritesMap = {};
+      favoriteChecks.forEach(({ id, isFavorited }) => {
+        newFavoritesMap[id] = isFavorited;
+      });
+      setFavoritesMap(newFavoritesMap);
+    } catch (err) {
+      console.error("Failed to check favorites:", err);
+      // On error, set all to false
+      const newFavoritesMap = {};
+      eventIds.forEach((id) => {
+        newFavoritesMap[id] = false;
+      });
+      setFavoritesMap(newFavoritesMap);
+    }
+  };
+
+  // Check RSVP status for events
+  const checkRSVPsForEvents = async (eventIds) => {
+    // Check if user is authenticated first
+    const token = localStorage.getItem("eventure_token");
+    if (!token) {
+      // Not authenticated, set all to false
+      const newRsvpMap = {};
+      eventIds.forEach((id) => {
+        newRsvpMap[id] = false;
+      });
+      setRsvpMap(newRsvpMap);
+      return;
+    }
+
+    try {
+      const rsvpChecks = await Promise.all(
+        eventIds.map(async (id) => {
+          try {
+            const result = await checkRSVPStatus(id);
+            return { id, isRsvped: result.isRsvped || false };
+          } catch (err) {
+            // Log error for debugging
+            console.warn(`Failed to check RSVP for event ${id}:`, err.message);
+            // If error, default to false
+            return { id, isRsvped: false };
+          }
+        })
+      );
+      
+      const newRsvpMap = {};
+      rsvpChecks.forEach(({ id, isRsvped }) => {
+        newRsvpMap[id] = isRsvped;
+      });
+      setRsvpMap(newRsvpMap);
+    } catch (err) {
+      console.error("Failed to check RSVPs:", err);
+      // On error, set all to false
+      const newRsvpMap = {};
+      eventIds.forEach((id) => {
+        newRsvpMap[id] = false;
+      });
+      setRsvpMap(newRsvpMap);
+    }
+  };
+
+  // Update URL when category changes
   useEffect(() => {
-    const fetchEvents = async () => {
-      try {
-        setLoading(true);
-        setError("");
-        const data = await getEvents();
-        setEvents(data || []);
-      } catch (err) {
-        console.error("Failed to fetch events:", err);
-        setError(err.message || "Failed to load events");
-        setEvents([]);
-      } finally {
-        setLoading(false);
-      }
-    };
+    if (selectedCategory && selectedCategory !== "All") {
+      setSearchParams({ category: selectedCategory });
+    } else {
+      setSearchParams({});
+    }
+  }, [selectedCategory, setSearchParams]);
 
-    fetchEvents();
-  }, []);
-
-  // Debounced ZIP + radius search (300ms)
+  // Fetch events when filters change (category, zip, radius)
   useEffect(() => {
     const handle = setTimeout(async () => {
       try {
@@ -96,6 +202,11 @@ function BrowseEventsPage() {
 
         const params = {};
         
+        // Category filter
+        if (selectedCategory && selectedCategory !== "All") {
+          params.category = selectedCategory;
+        }
+        
         // Only call API if ZIP is valid (5 digits) and radius is set
         if (isValidZip && zipCode) {
           params.zip = zipCode;
@@ -105,6 +216,15 @@ function BrowseEventsPage() {
 
         const data = await getEvents(params);
         setEvents(data || []);
+        
+        // Check favorite status for filtered events
+        if (data && data.length > 0) {
+          const eventIds = data.map((e) => parseInt(e.id, 10)).filter((id) => !isNaN(id));
+          if (eventIds.length > 0) {
+            await checkFavoritesForEvents(eventIds);
+            await checkRSVPsForEvents(eventIds);
+          }
+        }
       } catch (err) {
         console.error("Failed to fetch events:", err);
         setError(err.message || "Failed to load events");
@@ -115,7 +235,38 @@ function BrowseEventsPage() {
     }, 300);
 
     return () => clearTimeout(handle);
-  }, [zipCode, radius, isValidZip]);
+  }, [zipCode, radius, isValidZip, selectedCategory]);
+
+  // Handle favorite click
+  const handleFavoriteClick = async (eventId, willBeFavorited) => {
+    // Check if user is authenticated
+    const token = localStorage.getItem("eventure_token");
+    if (!token) {
+      alert("Please log in to favorite events");
+      return;
+    }
+
+    try {
+      if (willBeFavorited) {
+        await addFavorite(eventId);
+      } else {
+        await removeFavorite(eventId);
+      }
+      // Update local state immediately for better UX
+      setFavoritesMap((prev) => ({
+        ...prev,
+        [eventId]: willBeFavorited,
+      }));
+    } catch (err) {
+      console.error("Failed to update favorite:", err);
+      alert(err.message || "Failed to update favorite. Please try again.");
+      // Revert the change on error
+      setFavoritesMap((prev) => ({
+        ...prev,
+        [eventId]: !willBeFavorited,
+      }));
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -182,7 +333,7 @@ function BrowseEventsPage() {
               >
                 {CATEGORIES.map((cat) => (
                   <option key={cat} value={cat}>
-                    {cat}
+                    {cat === "All" ? "All Categories" : cat}
                   </option>
                 ))}
               </select>
@@ -284,12 +435,18 @@ function BrowseEventsPage() {
                 className="focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:rounded-2xl"
               >
                 <EventCard
+                  eventId={parseInt(event.id, 10)}
                   title={event.title}
                   date={formatEventDate(event.starts_at)}
                   location={buildFullAddress(event)}
                   category={event.category}
                   price={null}
-                  imageUrl={null}
+                  imageUrl={getImageUrl(event.main_image)}
+                  isFavorited={favoritesMap[parseInt(event.id, 10)] || false}
+                  isRsvped={rsvpMap[parseInt(event.id, 10)] || false}
+                  onFavoriteClick={handleFavoriteClick}
+                  capacity={event.capacity !== null && event.capacity !== undefined ? event.capacity : null}
+                  rsvpCount={event.rsvp_count !== null && event.rsvp_count !== undefined ? event.rsvp_count : 0}
                 />
               </Link>
             ))}
@@ -303,13 +460,19 @@ function BrowseEventsPage() {
                 className="block focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:rounded-2xl"
               >
                 <EventCard
+                  eventId={parseInt(event.id, 10)}
                   title={event.title}
                   date={formatEventDate(event.starts_at)}
                   location={buildFullAddress(event)}
                   category={event.category}
                   price={null}
-                  imageUrl={null}
+                  imageUrl={getImageUrl(event.main_image)}
                   viewMode="list"
+                  isFavorited={favoritesMap[parseInt(event.id, 10)] || false}
+                  isRsvped={rsvpMap[parseInt(event.id, 10)] || false}
+                  onFavoriteClick={handleFavoriteClick}
+                  capacity={event.capacity !== null && event.capacity !== undefined ? event.capacity : null}
+                  rsvpCount={event.rsvp_count !== null && event.rsvp_count !== undefined ? event.rsvp_count : 0}
                 />
               </Link>
             ))}

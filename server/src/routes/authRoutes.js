@@ -5,6 +5,8 @@ const User = require("../models/User");
 const PasswordResetCode = require("../models/PasswordResetCode");
 const { signToken, setAuthCookie } = require("../utils/jwt");
 const { sendMail, getMode } = require("../utils/mailer");
+const { authenticateToken } = require("../middleware/auth");
+const { pool } = require("../db");
 
 const router = express.Router();
 
@@ -446,6 +448,265 @@ router.post("/auth/reset-password", async (req, res) => {
   } catch (error) {
     console.error("Reset password error:", error);
     return res.status(500).json({ message: "Password reset failed" });
+  }
+});
+
+// GET /api/auth/profile - Get current user profile with stats
+router.get("/auth/profile", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get user info
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Get stats
+    const [eventsHosted] = await pool.execute(
+      "SELECT COUNT(*) as count FROM events WHERE created_by = ?",
+      [userId]
+    );
+    const [eventsAttending] = await pool.execute(
+      "SELECT COUNT(DISTINCT event_id) as count FROM rsvps WHERE user_id = ? AND status = 'going'",
+      [userId]
+    );
+    const [favoritesCount] = await pool.execute(
+      "SELECT COUNT(*) as count FROM favorites WHERE user_id = ?",
+      [userId]
+    );
+
+    return res.status(200).json({
+      user: formatUserResponse(user),
+      stats: {
+        eventsHosted: parseInt(eventsHosted[0]?.count || 0, 10),
+        eventsAttending: parseInt(eventsAttending[0]?.count || 0, 10),
+        favorites: parseInt(favoritesCount[0]?.count || 0, 10),
+      },
+    });
+  } catch (error) {
+    console.error("Failed to fetch profile:", error);
+    return res.status(500).json({ message: "Failed to fetch profile" });
+  }
+});
+
+// POST /api/auth/change-password-request - Request password change code
+router.post("/auth/change-password-request", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const emailNormalized = user.email;
+
+    // Generate 6-digit code
+    const code = generate6DigitCode();
+    const codeHash = await hashCode(code);
+
+    // Set expiration to 10 minutes from now
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    // Insert into password_reset_codes
+    await PasswordResetCode.create({
+      user_id: user.id,
+      code_hash: codeHash,
+      expires_at: expiresAt,
+      used_at: null,
+    });
+
+    // Send email
+    const emailSubject = "Eventure Password Change Verification Code";
+    const emailText = `Your Eventure verification code for changing your password is: ${code}. It expires in 10 minutes.`;
+
+    const currentMode = getMode();
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`📧 Sending password change code to ${emailNormalized} via ${currentMode === "SMTP" ? "smtp" : "fallback"}`);
+    }
+
+    const mailResult = await sendMail({
+      to: emailNormalized,
+      subject: emailSubject,
+      text: emailText,
+    });
+
+    // If in fallback mode, log the OTP clearly
+    if (mailResult.mode === "fallback") {
+      console.log(`🔑 DEV FALLBACK OTP for ${emailNormalized}: ${code}`);
+    }
+
+    return res.status(200).json({ message: "Verification code sent to your email" });
+  } catch (error) {
+    console.error("Change password request error:", error);
+    return res.status(500).json({ message: "Failed to send verification code" });
+  }
+});
+
+// POST /api/auth/change-password - Change password with code verification
+router.post("/auth/change-password", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { code, newPassword } = req.body;
+
+    if (!code || !newPassword) {
+      return res.status(400).json({ message: "Code and new password are required" });
+    }
+
+    // Validate code format (6 digits)
+    if (!/^\d{6}$/.test(String(code))) {
+      return res.status(400).json({ message: "Invalid or expired code" });
+    }
+
+    // Validate password length
+    if (String(newPassword).length < 8) {
+      return res.status(400).json({ message: "Password must be at least 8 characters" });
+    }
+
+    // Find user
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Find latest valid code for this user
+    const resetCode = await PasswordResetCode.findOne({
+      where: {
+        user_id: user.id,
+        used_at: null,
+        expires_at: { [Op.gt]: new Date() },
+      },
+      order: [["created_at", "DESC"]],
+    });
+
+    if (!resetCode) {
+      return res.status(400).json({ message: "Invalid or expired code" });
+    }
+
+    // Compare code
+    const isValidCode = await compareCode(String(code), resetCode.code_hash);
+    if (!isValidCode) {
+      return res.status(400).json({ message: "Invalid or expired code" });
+    }
+
+    // Update password
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+    await user.update({ passwordHash: newPasswordHash });
+
+    // Mark code as used
+    await resetCode.update({ used_at: new Date() });
+
+    return res.status(200).json({ message: "Password changed successfully" });
+  } catch (error) {
+    console.error("Change password error:", error);
+    return res.status(500).json({ message: "Failed to change password" });
+  }
+});
+
+// POST /api/auth/delete-account-request - Request account deletion code
+router.post("/auth/delete-account-request", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const emailNormalized = user.email;
+
+    // Generate 6-digit code
+    const code = generate6DigitCode();
+    const codeHash = await hashCode(code);
+
+    // Set expiration to 10 minutes from now
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    // Insert into password_reset_codes (reusing the same table)
+    await PasswordResetCode.create({
+      user_id: user.id,
+      code_hash: codeHash,
+      expires_at: expiresAt,
+      used_at: null,
+    });
+
+    // Send email
+    const emailSubject = "Eventure Account Deletion Verification Code";
+    const emailText = `Your Eventure verification code for deleting your account is: ${code}. It expires in 10 minutes. WARNING: This action cannot be undone.`;
+
+    const currentMode = getMode();
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`📧 Sending account deletion code to ${emailNormalized} via ${currentMode === "SMTP" ? "smtp" : "fallback"}`);
+    }
+
+    const mailResult = await sendMail({
+      to: emailNormalized,
+      subject: emailSubject,
+      text: emailText,
+    });
+
+    // If in fallback mode, log the OTP clearly
+    if (mailResult.mode === "fallback") {
+      console.log(`🔑 DEV FALLBACK OTP for ${emailNormalized}: ${code}`);
+    }
+
+    return res.status(200).json({ message: "Verification code sent to your email" });
+  } catch (error) {
+    console.error("Delete account request error:", error);
+    return res.status(500).json({ message: "Failed to send verification code" });
+  }
+});
+
+// POST /api/auth/delete-account - Delete account with code verification
+router.post("/auth/delete-account", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { code } = req.body;
+
+    if (!code) {
+      return res.status(400).json({ message: "Verification code is required" });
+    }
+
+    // Validate code format (6 digits)
+    if (!/^\d{6}$/.test(String(code))) {
+      return res.status(400).json({ message: "Invalid or expired code" });
+    }
+
+    // Find user
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Find latest valid code for this user
+    const resetCode = await PasswordResetCode.findOne({
+      where: {
+        user_id: user.id,
+        used_at: null,
+        expires_at: { [Op.gt]: new Date() },
+      },
+      order: [["created_at", "DESC"]],
+    });
+
+    if (!resetCode) {
+      return res.status(400).json({ message: "Invalid or expired code" });
+    }
+
+    // Compare code
+    const isValidCode = await compareCode(String(code), resetCode.code_hash);
+    if (!isValidCode) {
+      return res.status(400).json({ message: "Invalid or expired code" });
+    }
+
+    // Mark code as used
+    await resetCode.update({ used_at: new Date() });
+
+    // Delete user (cascade will handle related records if foreign keys are set up)
+    await user.destroy();
+
+    return res.status(200).json({ message: "Account deleted successfully" });
+  } catch (error) {
+    console.error("Delete account error:", error);
+    return res.status(500).json({ message: "Failed to delete account" });
   }
 });
 
