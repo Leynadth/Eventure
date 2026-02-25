@@ -84,6 +84,9 @@ async function verifyTransport() {
     console.error(`❌ SMTP verify failed: ${error.message}`);
     const msg = "Email sending disabled. Set SMTP_HOST, SMTP_USER, SMTP_PASS in Render to enable password reset emails.";
     console.warn("⚠️  " + msg);
+    if (/auth|login|535|credentials/i.test(error.message || "")) {
+      console.warn("⚠️  If using Brevo: use your SMTP key (SMTP & API → SMTP), not your account password or API key.");
+    }
     if (process.env.NODE_ENV === "production") console.warn("📧 Production: " + msg);
     mailerMode = "DEV_FALLBACK";
     return false;
@@ -123,6 +126,9 @@ async function sendMail({ to, subject, text, html }) {
     }
     if (error.responseCode) {
       console.error("   Response Code:", error.responseCode);
+    }
+    if (/auth|login|535|credentials/i.test(error.message || String(error.response || ""))) {
+      console.warn("⚠️  If using Brevo: use your SMTP key (SMTP & API → SMTP), not your account password or API key.");
     }
     // Still log to console as fallback
     // In development, log email details for testing

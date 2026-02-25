@@ -37,7 +37,33 @@ After adding or changing these, **redeploy** the backend so the new env vars are
 
 ---
 
-## Option B: Resend (free tier)
+## Option B: Brevo (free tier, formerly Sendinblue)
+
+Brevo is used for OTP emails (password reset, delete account, change password). Use **SMTP** credentials, not the API key.
+
+1. Sign up at [brevo.com](https://www.brevo.com) and go to **SMTP & API** (or **Settings → SMTP & API**).
+2. Under **SMTP**, note your **SMTP login** (your Brevo account email) and create/copy your **SMTP key**.
+   - **Important:** Use the **SMTP key**, not your account password and not the **API key**. The SMTP key is shown under “SMTP” on the same page.
+3. Add and verify a sender: **Senders & IP** → add a sender (e.g. `noreply@yourdomain.com`) and verify the domain or email.
+4. In your backend environment (e.g. Render or `.env`), set:
+
+   ```env
+   SMTP_HOST=smtp-relay.brevo.com
+   SMTP_PORT=587
+   SMTP_USER=<your Brevo SMTP login email>
+   SMTP_PASS=<your Brevo SMTP key>
+   SMTP_FROM=Eventure <noreply@yourdomain.com>
+   ```
+
+   Use the same address in `SMTP_FROM` as the verified sender in Brevo.
+
+5. Save and redeploy. On startup you should see `✅ SMTP verified` in the logs.
+
+**If it still fails:** Check server logs for `SMTP verify failed` or `Failed to send email`. If you see an authentication error, double-check that `SMTP_PASS` is the **SMTP key** from Brevo (SMTP & API → SMTP), not your login password or API key.
+
+---
+
+## Option C: Resend (free tier)
 
 1. Sign up at [resend.com](https://resend.com) (free tier available).
 2. Get your SMTP credentials from the dashboard (or create an API key and use Resend’s SMTP settings).
@@ -58,7 +84,7 @@ After adding or changing these, **redeploy** the backend so the new env vars are
 
 ---
 
-## Option C: Other SMTP (Gmail, Mailgun, etc.)
+## Option D: Other SMTP (Gmail, Mailgun, etc.)
 
 Use your provider’s SMTP host, port, username, and password. Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and optionally `SMTP_FROM` in Render, then redeploy.
 
