@@ -355,6 +355,15 @@ export async function getEventById(id) {
   }
 }
 
+/** Reverse geocode lat/lng to state and zip. Returns { state, zip_code }. */
+export async function getLocationFromCoords(lat, lng) {
+  const response = await fetch(
+    `${baseUrl}/events/reverse-geocode?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`,
+    { ...getFetchOptions(), method: "GET" }
+  );
+  return await handleResponse(response);
+}
+
 // Favorites API functions
 export async function getFavorites() {
   try {
@@ -468,6 +477,22 @@ export async function getMyEvents() {
   }
 }
 
+/** Get past (ended) events created by the current user. */
+export async function getMyPastEvents() {
+  try {
+    const response = await fetch(`${baseUrl}/events/my/past`, {
+      ...getFetchOptions(),
+      method: "GET",
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
 export async function getAttendingEvents() {
   try {
     const response = await fetch(`${baseUrl}/events/attending`, {
@@ -482,6 +507,17 @@ export async function getAttendingEvents() {
     }
     throw error;
   }
+}
+
+/** Get event analytics for organizer: event details + attendees (name, email, signed_up_at). */
+export async function getOrganizerEventAnalytics(eventId) {
+  const id = parseInt(eventId, 10);
+  if (isNaN(id)) throw new Error("Invalid event ID");
+  const response = await fetch(`${baseUrl}/events/${id}/organizer-analytics`, {
+    ...getFetchOptions(),
+    method: "GET",
+  });
+  return await handleResponse(response);
 }
 
 // deleteEvent for organizers (delete their own events)

@@ -12,6 +12,7 @@ import DashboardPage from './pages/user/DashboardPage'
 import FavoritesPage from './pages/user/FavoritesPage'
 import MyEventsPage from './pages/user/MyEventsPage'
 import MyAccountPage from './pages/user/MyAccountPage'
+import OrganizerEventAnalyticsPage from './pages/user/OrganizerEventAnalyticsPage'
 // Event pages
 import BrowseEventsPage from './pages/events/BrowseEventsPage'
 import EventsPage from './pages/events/EventsPage'
@@ -59,6 +60,14 @@ function App() {
           element={
             <ProtectedRoute>
               <MyEventsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/my-events/:eventId/analytics"
+          element={
+            <ProtectedRoute>
+              <OrganizerEventAnalyticsPage />
             </ProtectedRoute>
           }
         />

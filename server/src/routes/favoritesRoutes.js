@@ -44,6 +44,7 @@ router.get("/", async (req, res) => {
       WHERE f.user_id = ?
         AND e.status = 'approved'
         AND e.is_public = true
+        AND ((e.ends_at IS NOT NULL AND e.ends_at >= NOW()) OR (e.ends_at IS NULL AND e.starts_at >= NOW()))
       ORDER BY f.created_at DESC
     `;
 
@@ -65,10 +66,11 @@ router.post("/:eventId", async (req, res) => {
       return res.status(400).json({ message: "Invalid event ID" });
     }
 
-    // Check if event exists and is approved/public
+    // Check if event exists, is approved/public, and has not ended
     const eventCheckSql = `
       SELECT id FROM events 
       WHERE id = ? AND status = 'approved' AND is_public = true
+        AND ((ends_at IS NOT NULL AND ends_at >= NOW()) OR (ends_at IS NULL AND starts_at >= NOW()))
     `;
     const [eventRows] = await pool.execute(eventCheckSql, [eventId]);
     

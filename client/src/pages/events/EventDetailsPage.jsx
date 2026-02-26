@@ -2,6 +2,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import {
   getEventById,
+  getEvents,
   checkFavorite,
   addFavorite,
   removeFavorite,
@@ -158,6 +159,8 @@ function EventDetailsPage() {
   const [commentSubmitting, setCommentSubmitting] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [showSignInPrompt, setShowSignInPrompt] = useState(false);
+  const [recommendedEvents, setRecommendedEvents] = useState([]);
 
   useEffect(() => {
     const load = async () => {
@@ -205,6 +208,32 @@ function EventDetailsPage() {
     load();
   }, [id]);
 
+  // Load recommended events (same state, random) for sidebar
+  const RECOMMENDED_LIMIT = 5;
+  useEffect(() => {
+    if (!event?.id) return;
+    const stateVal = event.state && String(event.state).trim();
+    if (!stateVal) {
+      setRecommendedEvents([]);
+      return;
+    }
+    const fetchRecommended = async () => {
+      try {
+        const list = await getEvents({
+          state: stateVal,
+          excludeEventId: event.id,
+          limit: RECOMMENDED_LIMIT,
+          orderBy: "random",
+        });
+        setRecommendedEvents(Array.isArray(list) ? list : []);
+      } catch (err) {
+        console.warn("Failed to load recommended events:", err);
+        setRecommendedEvents([]);
+      }
+    };
+    fetchRecommended();
+  }, [event?.id, event?.state]);
+
   // Lightbox keyboard/scroll - must be at top level (Rules of Hooks: same # of hooks every render)
   useEffect(() => {
     if (!lightboxOpen) return;
@@ -223,10 +252,9 @@ function EventDetailsPage() {
   }, [lightboxOpen, event?.main_image, event?.image_2, event?.image_3, event?.image_4]);
 
   const handleFavoriteClick = async () => {
-    // Check if user is authenticated
     const token = localStorage.getItem("eventure_token");
     if (!token) {
-      navigate("/login", { state: { returnTo: `/events/${id}` } });
+      setShowSignInPrompt(true);
       return;
     }
 
@@ -245,10 +273,9 @@ function EventDetailsPage() {
   };
 
   const handleRSVP = async () => {
-    // Check if user is authenticated
     const token = localStorage.getItem("eventure_token");
     if (!token) {
-      navigate("/login", { state: { returnTo: `/events/${id}` } });
+      setShowSignInPrompt(true);
       return;
     }
 
@@ -281,7 +308,7 @@ function EventDetailsPage() {
     if (!msg) return;
     const token = localStorage.getItem("eventure_token");
     if (!token) {
-      navigate("/login", { state: { returnTo: `/events/${id}` } });
+      setShowSignInPrompt(true);
       return;
     }
     try {
@@ -383,9 +410,10 @@ function EventDetailsPage() {
   const closeLightbox = () => setLightboxOpen(false);
 
   return (
+    <>
     <div className="font-[Arimo,sans-serif] bg-[#f8fafc] min-h-screen">
-      <div className="max-w-[1120px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {/* Back link */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        {/* Back link - full width */}
         <Link
           to="/browse"
           className="inline-flex items-center gap-2 text-[#64748b] hover:text-[#2e6b4e] text-sm font-medium mb-6 transition-colors"
@@ -394,6 +422,9 @@ function EventDetailsPage() {
           Back to events
         </Link>
 
+        <div className="flex flex-col lg:flex-row gap-8">
+          {/* Main content - event details (YouTube "video" area) */}
+          <main className="flex-1 min-w-0">
         {/* Hero with overlay and date badge - click image to open full-size lightbox */}
         <div className="relative w-full h-[320px] sm:h-[380px] rounded-2xl overflow-hidden mb-8 shadow-xl bg-gradient-to-br from-[#2e6b4e] to-[#1e3d32]">
           {allImages.length > 0 ? (
@@ -767,8 +798,116 @@ function EventDetailsPage() {
           </form>
         </div>
 
+          </main>
+
+          {/* Sidebar - recommended events (YouTube "Up next" style) */}
+          <aside className="lg:w-[360px] shrink-0 flex flex-col">
+            <div className="bg-white rounded-2xl shadow-sm border border-[#e2e8f0] p-5 sticky top-24">
+              <h2 className="text-base font-semibold text-[#0f172b] mb-4 flex items-center gap-2">
+                <span className="w-1 h-5 bg-[#2e6b4e] rounded-full" />
+                More in {event?.state || "this state"}
+              </h2>
+              {recommendedEvents.length === 0 ? (
+                <p className="text-sm text-[#64748b]">No other events in {event?.state || "this state"} right now.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {recommendedEvents.map((rec) => {
+                    const recImage = rec.main_image || rec.image_2 || rec.image_3 || rec.image_4;
+                    const recDate = formatEventDate(rec.starts_at);
+                    return (
+                      <li key={rec.id}>
+                        <Link
+                          to={`/events/${rec.id}`}
+                          className="flex gap-3 p-2 -mx-2 rounded-xl hover:bg-[#f8fafc] transition-colors group"
+                        >
+                          <div className="w-28 h-20 shrink-0 rounded-lg overflow-hidden bg-[#e2e8f0]">
+                            {recImage ? (
+                              <img
+                                src={getImageUrl(recImage)}
+                                alt=""
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-[#94a3b8] text-xs">Event</div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-[#0f172b] line-clamp-2 group-hover:text-[#2e6b4e] transition-colors">
+                              {rec.title}
+                            </p>
+                            <p className="text-xs text-[#64748b] mt-0.5">{recDate}</p>
+                            {rec.category && (
+                              <span className="inline-block mt-1 px-2 py-0.5 bg-[#2e6b4e]/10 text-[#2e6b4e] text-xs font-medium rounded">
+                                {rec.category}
+                              </span>
+                            )}
+                          </div>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </aside>
+        </div>
       </div>
     </div>
+
+    {/* Sign-in required prompt for guests */}
+    {showSignInPrompt && (
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50"
+        onClick={() => setShowSignInPrompt(false)}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="signin-prompt-title"
+      >
+        <div
+          className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="w-12 h-12 rounded-full bg-[#2e6b4e]/10 flex items-center justify-center mx-auto mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2e6b4e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+              <polyline points="10 17 15 12 10 7" />
+              <line x1="15" y1="12" x2="3" y2="12" />
+            </svg>
+          </div>
+          <h2 id="signin-prompt-title" className="text-xl font-semibold text-[#0f172b] mb-2">
+            You must be signed in
+          </h2>
+          <p className="text-[#64748b] text-sm mb-5">
+            Not registered yet? Sign up today to RSVP, save favorites, and join the discussion.
+          </p>
+          <div className="flex flex-col gap-3">
+            <Link
+              to="/register"
+              className="w-full px-4 py-3 rounded-xl bg-[#2e6b4e] text-white font-semibold hover:bg-[#255a43] transition-colors"
+              onClick={() => setShowSignInPrompt(false)}
+            >
+              Sign up
+            </Link>
+            <Link
+              to="/login"
+              state={{ returnTo: `/events/${id}` }}
+              className="text-sm text-[#2e6b4e] hover:underline font-medium"
+              onClick={() => setShowSignInPrompt(false)}
+            >
+              Already have an account? Log in
+            </Link>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowSignInPrompt(false)}
+            className="mt-4 text-sm text-[#64748b] hover:text-[#0f172b]"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

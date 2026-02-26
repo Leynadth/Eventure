@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getMyEvents, getAttendingEvents, deleteEvent } from "../../api";
+import { getMyEvents, getMyPastEvents, getAttendingEvents, getEventById, updateEvent, deleteEvent } from "../../api";
 import AppShell from "../../components/layout/AppShell";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
@@ -59,38 +59,63 @@ function buildFullAddress(event) {
   return parts.join(", ");
 }
 
+function toDatetimeLocal(isoString) {
+  if (!isoString) return "";
+  const d = new Date(isoString);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${m}-${day}T${h}:${min}`;
+}
+
+function nextWeekDefault() {
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  d.setHours(18, 0, 0, 0);
+  return toDatetimeLocal(d.toISOString());
+}
+
 function MyEventsPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("hosting"); // "hosting" or "attending"
   const [hostingEvents, setHostingEvents] = useState([]);
   const [attendingEvents, setAttendingEvents] = useState([]);
+  const [pastEvents, setPastEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [reactivateEventId, setReactivateEventId] = useState(null);
+  const [reactivateEventData, setReactivateEventData] = useState(null);
+  const [reactivateStart, setReactivateStart] = useState("");
+  const [reactivateEnd, setReactivateEnd] = useState("");
+  const [reactivateSubmitting, setReactivateSubmitting] = useState(false);
+  const [reactivateError, setReactivateError] = useState("");
+
+  const loadEvents = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const [hosting, attending, past] = await Promise.all([
+        getMyEvents(),
+        getAttendingEvents(),
+        getMyPastEvents(),
+      ]);
+      setHostingEvents(hosting || []);
+      setAttendingEvents(attending || []);
+      setPastEvents(past || []);
+    } catch (err) {
+      console.error("Failed to fetch events:", err);
+      setError(err.message || "Failed to load events");
+      setHostingEvents([]);
+      setAttendingEvents([]);
+      setPastEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadEvents = async () => {
-      try {
-        setLoading(true);
-        setError("");
-        
-        // Load both hosting and attending events
-        const [hosting, attending] = await Promise.all([
-          getMyEvents(),
-          getAttendingEvents(),
-        ]);
-        
-        setHostingEvents(hosting || []);
-        setAttendingEvents(attending || []);
-      } catch (err) {
-        console.error("Failed to fetch events:", err);
-        setError(err.message || "Failed to load events");
-        setHostingEvents([]);
-        setAttendingEvents([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadEvents();
   }, []);
 
@@ -113,8 +138,85 @@ function MyEventsPage() {
     navigate(`/events/${eventId}`);
   };
 
+  const handleAnalytics = (eventId) => {
+    navigate(`/my-events/${eventId}/analytics`);
+  };
+
   const handleEdit = (eventId) => {
     navigate(`/events/${eventId}/edit`);
+  };
+
+  const openReactivateModal = async (eventId) => {
+    setReactivateError("");
+    setReactivateStart(nextWeekDefault());
+    setReactivateEnd("");
+    setReactivateEventId(eventId);
+    setReactivateEventData(null);
+    try {
+      const event = await getEventById(eventId);
+      setReactivateEventData(event);
+    } catch (err) {
+      setReactivateError(err.message || "Could not load event");
+    }
+  };
+
+  const closeReactivateModal = () => {
+    setReactivateEventId(null);
+    setReactivateEventData(null);
+    setReactivateStart("");
+    setReactivateEnd("");
+    setReactivateError("");
+  };
+
+  const handleReactivateSubmit = async (e) => {
+    e.preventDefault();
+    if (!reactivateEventId || !reactivateEventData || !reactivateStart.trim()) return;
+    const start = new Date(reactivateStart);
+    if (isNaN(start.getTime())) {
+      setReactivateError("Please enter a valid start date and time.");
+      return;
+    }
+    let end = null;
+    if (reactivateEnd.trim()) {
+      end = new Date(reactivateEnd);
+      if (isNaN(end.getTime()) || end < start) {
+        setReactivateError("End date/time must be after start date/time.");
+        return;
+      }
+    }
+    setReactivateSubmitting(true);
+    setReactivateError("");
+    try {
+      const payload = {
+        title: reactivateEventData.title,
+        description: reactivateEventData.description,
+        category: reactivateEventData.category,
+        starts_at: start.toISOString(),
+        ends_at: end ? end.toISOString() : null,
+        venue: reactivateEventData.venue ?? "",
+        address_line1: reactivateEventData.address_line1 ?? "",
+        address_line2: reactivateEventData.address_line2 ?? "",
+        city: reactivateEventData.city ?? "",
+        state: reactivateEventData.state ?? "",
+        zip_code: reactivateEventData.zip_code ?? "",
+        location: reactivateEventData.location ?? "",
+        tags: reactivateEventData.tags ?? "",
+        ticket_price: reactivateEventData.ticket_price ?? 0,
+        capacity: reactivateEventData.capacity ?? null,
+        main_image: reactivateEventData.main_image ?? null,
+        image_2: reactivateEventData.image_2 ?? null,
+        image_3: reactivateEventData.image_3 ?? null,
+        image_4: reactivateEventData.image_4 ?? null,
+        is_public: reactivateEventData.is_public !== false,
+      };
+      await updateEvent(reactivateEventId, payload);
+      closeReactivateModal();
+      await loadEvents();
+    } catch (err) {
+      setReactivateError(err.message || "Failed to reactivate event");
+    } finally {
+      setReactivateSubmitting(false);
+    }
   };
 
   const currentEvents = activeTab === "hosting" ? hostingEvents : attendingEvents;
@@ -348,6 +450,15 @@ function MyEventsPage() {
                               View
                             </button>
                             <button
+                              onClick={() => handleAnalytics(event.id)}
+                              className="px-4 py-2 bg-white border border-[#2e6b4e] text-[#2e6b4e] rounded-lg text-sm font-medium hover:bg-[#2e6b4e]/10 transition-colors flex items-center justify-center gap-2"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
+                              </svg>
+                              Analytics
+                            </button>
+                            <button
                               onClick={() => handleEdit(event.id)}
                               className="px-4 py-2 bg-white border border-[#2e6b4e] text-[#2e6b4e] rounded-lg text-sm font-medium hover:bg-[#2e6b4e] hover:text-white transition-colors flex items-center justify-center gap-2"
                             >
@@ -403,6 +514,98 @@ function MyEventsPage() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Past Events (hosting only) */}
+        {activeTab === "hosting" && !loading && pastEvents.length > 0 && (
+          <div className="mt-12">
+            <h2 className="text-xl font-semibold text-[#0f172b] mb-4">Past Events</h2>
+            <p className="text-[#45556c] text-sm mb-6">Reactivate a past event by setting a new date and time.</p>
+            <div className="space-y-4">
+              {pastEvents.map((event) => {
+                const dateText = formatEventDate(event.starts_at);
+                const timeText = formatEventTimeRange(event.starts_at, event.ends_at);
+                return (
+                  <div
+                    key={event.id}
+                    className="bg-white border border-[#e2e8f0] rounded-xl shadow-sm overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4"
+                  >
+                    <div className="flex-1 min-w-0">
+                      {event.category && (
+                        <span className="inline-block px-2 py-0.5 bg-[#94a3b8]/20 text-[#64748b] text-xs font-medium rounded mb-2">
+                          {event.category}
+                        </span>
+                      )}
+                      <h3 className="font-semibold text-[#0f172b]">{event.title}</h3>
+                      <p className="text-sm text-[#64748b] mt-1">
+                        Was: {dateText}
+                        {timeText && ` • ${timeText}`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openReactivateModal(event.id)}
+                      className="shrink-0 px-4 py-2 bg-[#2e6b4e] text-white rounded-lg text-sm font-medium hover:bg-[#255a43] transition-colors"
+                    >
+                      Reactivate
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Reactivate event modal */}
+        {reactivateEventId != null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={closeReactivateModal}>
+            <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-[#0f172b] mb-1">Reactivate event</h3>
+              {reactivateEventData && (
+                <p className="text-sm text-[#64748b] mb-4">{reactivateEventData.title}</p>
+              )}
+              {reactivateError && (
+                <p className="text-sm text-red-600 mb-4" role="alert">{reactivateError}</p>
+              )}
+              <form onSubmit={handleReactivateSubmit}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-[#0f172b] mb-1">New start date & time *</label>
+                  <input
+                    type="datetime-local"
+                    required
+                    value={reactivateStart}
+                    onChange={(e) => setReactivateStart(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[#0f172b] focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
+                  />
+                </div>
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-[#0f172b] mb-1">New end date & time (optional)</label>
+                  <input
+                    type="datetime-local"
+                    value={reactivateEnd}
+                    onChange={(e) => setReactivateEnd(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[#0f172b] focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
+                  />
+                </div>
+                <div className="flex gap-3 justify-end">
+                  <button
+                    type="button"
+                    onClick={closeReactivateModal}
+                    className="px-4 py-2 rounded-lg border border-[#e2e8f0] text-[#475569] font-medium hover:bg-[#f1f5f9]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={reactivateSubmitting || !reactivateStart.trim()}
+                    className="px-4 py-2 rounded-lg bg-[#2e6b4e] text-white font-medium hover:bg-[#255a43] disabled:opacity-50"
+                  >
+                    {reactivateSubmitting ? "Saving…" : "Reactivate"}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         )}
       </div>

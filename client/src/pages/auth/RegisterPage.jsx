@@ -12,7 +12,7 @@ function EyeIcon({ show, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#62748e] hover:text-[#314158] focus:outline-none"
+      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#64748b] hover:text-[#334155] focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:ring-offset-0 rounded p-0.5"
       tabIndex={-1}
       aria-label={show ? "Hide password" : "Show password"}
     >
@@ -56,19 +56,15 @@ function RegisterPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
-
     if (!agreeTerms) {
       setError("You must agree to the Terms of Service and Privacy Policy.");
       return;
     }
-
     setLoading(true);
-
     try {
       await register({
         firstName: formData.firstName.trim(),
@@ -87,184 +83,201 @@ function RegisterPage() {
   };
 
   const inputBase =
-    "h-[50px] w-full rounded-lg border border-[#cad5e2] pl-10 pr-12 text-base placeholder:text-[rgba(10,10,10,0.5)] focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent";
+    "h-12 w-full rounded-xl border border-[#e2e8f0] bg-[#f8fafc] pl-4 pr-12 text-[#0f172a] placeholder:text-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#2e6b4e]/50 focus:border-[#2e6b4e] transition-shadow";
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-5 font-[Arimo,sans-serif]">
-      <div className="w-full max-w-[480px] bg-white border border-[#e2e8f0] rounded-2xl shadow-[0px_10px_15px_-3px_rgba(0,0,0,0.1),0px_4px_6px_-4px_rgba(0,0,0,0.1)] p-8 flex flex-col gap-6">
-        {/* Brand row: logo */}
-        <div className="flex items-center justify-center">
-          <img 
-            src="/eventure-logo.png" 
-            alt="Eventure" 
-            className="h-14 w-auto"
-          />
-        </div>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#f8fafc] via-white to-[#ecfdf5] p-4 sm:p-6 font-[Arimo,sans-serif] py-10">
+      <div className="w-full max-w-[480px]">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 text-sm text-[#64748b] hover:text-[#2e6b4e] transition-colors mb-6"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12" />
+            <polyline points="12 19 5 12 12 5" />
+          </svg>
+          Back to home
+        </Link>
 
-        <div className="flex flex-col gap-1 text-center">
-          <h1 className="text-2xl text-[#0f172b] font-semibold">Create Account</h1>
-          <p className="text-base text-[#45556c]">Join the community today</p>
-        </div>
-
-        {error && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-lg text-center text-sm" role="alert">
-            {error}
+        <div className="bg-white/90 backdrop-blur-sm border border-[#e2e8f0] rounded-2xl shadow-xl shadow-[#0f172a]/5 p-8 sm:p-10 flex flex-col gap-6 border-t-4 border-t-[#2e6b4e]">
+          <div className="flex flex-col items-center gap-2">
+            <Link to="/" className="focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] rounded-lg">
+              <img src="/eventure-logo.png" alt="Eventure" className="h-12 w-auto" />
+            </Link>
+            <h1 className="text-2xl font-semibold text-[#0f172a] mt-2">Create your account</h1>
+            <p className="text-[#64748b] text-sm text-center">Join to discover events, RSVP, and create your own</p>
           </div>
-        )}
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-4">
+          {error && (
+            <div className="flex items-center gap-2 rounded-xl bg-[#fef2f2] text-[#b91c1c] px-4 py-3 text-sm border border-[#fecaca]" role="alert">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="firstName" className="text-sm font-medium text-[#334155]">
+                  First name
+                </label>
+                <input
+                  type="text"
+                  id="firstName"
+                  name="firstName"
+                  autoComplete="given-name"
+                  value={formData.firstName}
+                  onChange={handleChange}
+                  required
+                  placeholder="First name"
+                  className={inputBase.replace("pr-12", "pr-4")}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="lastName" className="text-sm font-medium text-[#334155]">
+                  Last name
+                </label>
+                <input
+                  type="text"
+                  id="lastName"
+                  name="lastName"
+                  autoComplete="family-name"
+                  value={formData.lastName}
+                  onChange={handleChange}
+                  required
+                  placeholder="Last name"
+                  className={inputBase.replace("pr-12", "pr-4")}
+                />
+              </div>
+            </div>
+
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="firstName" className="text-sm text-[#314158]">
-                First Name
+              <label htmlFor="reg-email" className="text-sm font-medium text-[#334155]">
+                Email
               </label>
               <input
-                type="text"
-                id="firstName"
-                name="firstName"
-                value={formData.firstName}
+                type="email"
+                id="reg-email"
+                name="email"
+                autoComplete="email"
+                value={formData.email}
                 onChange={handleChange}
                 required
-                placeholder="First name"
-                className={inputBase}
+                placeholder="you@example.com"
+                className={inputBase.replace("pr-12", "pr-4")}
               />
             </div>
+
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="lastName" className="text-sm text-[#314158]">
-                Last Name
+              <label htmlFor="role" className="text-sm font-medium text-[#334155]">
+                I want to
               </label>
-              <input
-                type="text"
-                id="lastName"
-                name="lastName"
-                value={formData.lastName}
-                onChange={handleChange}
-                required
-                placeholder="Last name"
-                className={inputBase}
-              />
+              <div className="relative">
+                <select
+                  id="role"
+                  name="role"
+                  value={formData.role}
+                  onChange={handleChange}
+                  className={`${inputBase.replace("pr-12", "pr-10")} appearance-none bg-white cursor-pointer`}
+                >
+                  {ROLE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[#64748b]">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </span>
+              </div>
             </div>
-          </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="email" className="text-sm text-[#314158]">
-              Email
-            </label>
-            <input
-              type="email"
-              id="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              required
-              placeholder="you@example.com"
-              className={inputBase}
-            />
-          </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="password" className="text-sm font-medium text-[#334155]">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  id="password"
+                  name="password"
+                  autoComplete="new-password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  required
+                  minLength={8}
+                  placeholder="At least 8 characters"
+                  className={inputBase}
+                />
+                <EyeIcon show={showPassword} onClick={() => setShowPassword((s) => !s)} />
+              </div>
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="role" className="text-sm text-[#314158]">
-              I want to
-            </label>
-            <div className="relative">
-              <select
-                id="role"
-                name="role"
-                value={formData.role}
-                onChange={handleChange}
-                className={`${inputBase} appearance-none bg-white cursor-pointer pr-10`}
-              >
-                {ROLE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[#62748e]">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="confirmPassword" className="text-sm font-medium text-[#334155]">
+                Confirm password
+              </label>
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  autoComplete="new-password"
+                  value={formData.confirmPassword}
+                  onChange={handleChange}
+                  required
+                  minLength={8}
+                  placeholder="Confirm your password"
+                  className={inputBase}
+                />
+                <EyeIcon show={showConfirmPassword} onClick={() => setShowConfirmPassword((s) => !s)} />
+              </div>
+            </div>
+
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={agreeTerms}
+                onChange={(e) => {
+                  setAgreeTerms(e.target.checked);
+                  setError("");
+                }}
+                className="mt-1 w-4 h-4 rounded border-[#cbd5e1] text-[#2e6b4e] focus:ring-[#2e6b4e]"
+              />
+              <span className="text-sm text-[#475569]">
+                I agree to the{" "}
+                <Link to="#" className="text-[#2e6b4e] hover:underline font-medium">
+                  Terms of Service
+                </Link>{" "}
+                and{" "}
+                <Link to="#" className="text-[#2e6b4e] hover:underline font-medium">
+                  Privacy Policy
+                </Link>
               </span>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="password" className="text-sm text-[#314158]">
-              Password
             </label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                id="password"
-                name="password"
-                value={formData.password}
-                onChange={handleChange}
-                required
-                minLength={8}
-                placeholder="At least 8 characters"
-                className={inputBase}
-              />
-              <EyeIcon show={showPassword} onClick={() => setShowPassword((s) => !s)} />
-            </div>
-          </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="confirmPassword" className="text-sm text-[#314158]">
-              Confirm Password
-            </label>
-            <div className="relative">
-              <input
-                type={showConfirmPassword ? "text" : "password"}
-                id="confirmPassword"
-                name="confirmPassword"
-                value={formData.confirmPassword}
-                onChange={handleChange}
-                required
-                minLength={8}
-                placeholder="Confirm your password"
-                className={inputBase}
-              />
-              <EyeIcon show={showConfirmPassword} onClick={() => setShowConfirmPassword((s) => !s)} />
-            </div>
-          </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="h-12 w-full rounded-xl bg-[#2e6b4e] text-white font-semibold hover:bg-[#25634d] active:bg-[#1e5239] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-[#2e6b4e]/20"
+            >
+              {loading ? "Creating account…" : "Create account"}
+            </button>
+          </form>
 
-          <label className="flex items-start gap-2.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={agreeTerms}
-              onChange={(e) => {
-                setAgreeTerms(e.target.checked);
-                setError("");
-              }}
-              className="mt-1 w-4 h-4 text-[#2e6b4e] border-[#cad5e2] rounded focus:ring-[#2e6b4e]"
-            />
-            <span className="text-sm text-[#314158]">
-              I agree to the{" "}
-              <Link to="#" className="text-[#2e6b4e] hover:underline font-medium">
-                Terms of Service
-              </Link>{" "}
-              and{" "}
-              <Link to="#" className="text-[#2e6b4e] hover:underline font-medium">
-                Privacy Policy
-              </Link>
-            </span>
-          </label>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="h-12 w-full bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? "Creating account…" : "Create Account"}
-          </button>
-        </form>
-
-        <p className="text-sm text-[#62748e] text-center">
-          Already have an account?{" "}
-          <Link to="/login" className="text-[#2e6b4e] hover:underline font-medium">
-            Sign in
-          </Link>
-        </p>
+          <p className="text-center text-sm text-[#64748b]">
+            Already have an account?{" "}
+            <Link to="/login" className="text-[#2e6b4e] hover:underline font-semibold">
+              Sign in
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   );

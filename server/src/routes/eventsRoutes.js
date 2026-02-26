@@ -16,7 +16,11 @@ async function geocodeAddress(venue, addressLine1, city, state, zipCode) {
     zipCode && String(zipCode).trim(),
   ].filter(Boolean);
   if (parts.length === 0) return null;
-  const query = parts.join(", ");
+  // When only zip is provided, append " USA" so Nominatim returns a US result
+  let query = parts.join(", ");
+  if (parts.length === 1 && zipCode && String(zipCode).trim().length >= 5) {
+    query = `${String(zipCode).trim()}, USA`;
+  }
   if (query.length < 5) return null;
   try {
     const res = await fetch(
@@ -32,6 +36,19 @@ async function geocodeAddress(venue, addressLine1, city, state, zipCode) {
     return null;
   } catch {
     return null;
+  }
+}
+
+/** Cache a geocoded zip into zip_locations so radius search and future lookups work for any zip. */
+async function cacheZipInLocations(zipCode, lat, lng) {
+  if (!zipCode || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+  try {
+    await pool.execute(
+      "INSERT INTO zip_locations (zip_code, lat, lng, city, state) VALUES (?, ?, ?, ?, ?) ON CONFLICT (zip_code) DO UPDATE SET lat = EXCLUDED.lat, lng = EXCLUDED.lng",
+      [String(zipCode).trim(), lat, lng, null, null]
+    );
+  } catch (e) {
+    console.warn("Could not cache zip in zip_locations:", e.message);
   }
 }
 
@@ -51,6 +68,37 @@ function parseRadius(value) {
   const validRadii = [5, 10, 15, 20, 25, 30, 40, 50];
   if (!validRadii.includes(n)) return undefined;
   return n;
+}
+
+/** SQL: event has not ended yet (use ends_at if set, else starts_at). */
+const NOT_ENDED_SQL = "((e.ends_at IS NOT NULL AND e.ends_at >= NOW()) OR (e.ends_at IS NULL AND e.starts_at >= NOW()))";
+
+function isEventEnded(event) {
+  if (!event || (!event.ends_at && !event.starts_at)) return true;
+  const now = new Date();
+  const end = event.ends_at ? new Date(event.ends_at) : new Date(event.starts_at);
+  return end < now;
+}
+
+/** Reverse geocode lat/lng to state and zip via Nominatim. Returns { state, zip_code } or null. */
+async function reverseGeocode(lat, lng) {
+  if (lat == null || lng == null || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return null;
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&format=json&addressdetails=1`,
+      { headers: { "User-Agent": "Eventure/1.0 (https://eventure.com/contact)" } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const addr = data && data.address;
+    if (!addr) return null;
+    const state = (addr.state || addr.county || "").trim() || null;
+    const postcode = (addr.postcode != null ? String(addr.postcode) : "").trim();
+    const zipCode = postcode.replace(/\D/g, "").slice(0, 5) || null;
+    return { state, zip_code: zipCode };
+  } catch {
+    return null;
+  }
 }
 
 // POST /api/events - Create a new event (organizer only)
@@ -225,14 +273,33 @@ router.post("/", authenticateToken, authorize(["organizer", "admin"]), async (re
   }
 });
 
+// GET /api/events/reverse-geocode - Get state and zip from lat/lng (for "Use my location")
+router.get("/reverse-geocode", async (req, res) => {
+  try {
+    const lat = req.query.lat != null ? parseFloat(req.query.lat) : NaN;
+    const lng = req.query.lng != null ? parseFloat(req.query.lng) : NaN;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ message: "Missing or invalid lat and lng" });
+    }
+    const result = await reverseGeocode(lat, lng);
+    if (!result) {
+      return res.status(404).json({ message: "Could not determine location for these coordinates" });
+    }
+    return res.status(200).json(result);
+  } catch (err) {
+    console.error("Reverse geocode error:", err);
+    return res.status(500).json({ message: "Location lookup failed" });
+  }
+});
+
 // GET /api/events - Fetch public approved events
-// Query params: limit, zip, radius, category, orderBy, order
+// Query params: limit, zip, radius, category, state, orderBy, order, lat, lng, excludeEventId
 router.get("/", async (req, res) => {
   try {
-    const { limit, zip, radius, category, orderBy, order } = req.query;
+    const { limit, zip, radius, category, state, orderBy, order, lat, lng, excludeEventId } = req.query;
 
-    // Only show approved events (Postgres: is_public boolean)
-    const whereClauses = ["e.status = ?", "e.is_public = ?"];
+    // Only show approved events (Postgres: is_public boolean) and not ended
+    const whereClauses = ["e.status = ?", "e.is_public = ?", NOT_ENDED_SQL];
     const params = ["approved", true];
 
     // Category filter
@@ -241,42 +308,109 @@ router.get("/", async (req, res) => {
       params.push(String(category).trim());
     }
 
-    // Radius search with zip
-    if (zip && String(zip).trim() !== "") {
-      const zipCode = String(zip).trim();
-      const radiusValue = parseRadius(radius);
-
-      if (!radiusValue) {
-        // If radius is not provided or invalid, return empty results
-        return res.status(200).json([]);
+    // State filter: only applied when user explicitly selects a state. Zip+radius is purely geographic
+    // (e.g. MA user with 50 mi radius sees events in MA and RI within 50 mi unless they filter by state).
+    const US_STATE_ABBREV = { Alabama: "AL", Alaska: "AK", Arizona: "AZ", Arkansas: "AR", California: "CA", Colorado: "CO", Connecticut: "CT", Delaware: "DE", "District of Columbia": "DC", Florida: "FL", Georgia: "GA", Hawaii: "HI", Idaho: "ID", Illinois: "IL", Indiana: "IN", Iowa: "IA", Kansas: "KS", Kentucky: "KY", Louisiana: "LA", Maine: "ME", Maryland: "MD", Massachusetts: "MA", Michigan: "MI", Minnesota: "MN", Mississippi: "MS", Missouri: "MO", Montana: "MT", Nebraska: "NE", Nevada: "NV", "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY", "North Carolina": "NC", "North Dakota": "ND", Ohio: "OH", Oklahoma: "OK", Oregon: "OR", Pennsylvania: "PA", "Rhode Island": "RI", "South Carolina": "SC", "South Dakota": "SD", Tennessee: "TN", Texas: "TX", Utah: "UT", Vermont: "VT", Virginia: "VA", Washington: "WA", "West Virginia": "WV", Wisconsin: "WI", Wyoming: "WY" };
+    if (state && String(state).trim() !== "" && String(state).trim() !== "All") {
+      const stateVal = String(state).trim();
+      const abbrev = US_STATE_ABBREV[stateVal] || null;
+      if (abbrev) {
+        whereClauses.push("(LOWER(TRIM(e.state)) = LOWER(TRIM(?)) OR LOWER(TRIM(e.state)) = LOWER(?))");
+        params.push(stateVal, abbrev);
+      } else {
+        whereClauses.push("LOWER(TRIM(e.state)) = LOWER(TRIM(?))");
+        params.push(stateVal);
       }
+    }
+
+    // Exclude a specific event (e.g. for "recommended" sidebar)
+    const excludeIdRaw = excludeEventId && String(excludeEventId).trim() !== "" ? String(excludeEventId).trim() : null;
+    const excludeId = excludeIdRaw && !Number.isNaN(parseInt(excludeIdRaw, 10)) ? parseInt(excludeIdRaw, 10) : null;
+    if (excludeId != null) {
+      whereClauses.push("e.id != ?");
+      params.push(excludeId);
+    }
+
+    // Helper: add filter for zip+radius. Includes (1) events with lat/lng within radius, OR (2) events whose zip is in zipCodesInRadius (so events without coords still show if their zip center is in range)
+    const addZipRadiusFilter = (centerLat, centerLng, radiusMiles, zipCodesInRadius) => {
+      const radiusMeters = radiusMiles * 1609.34;
+      const haversineExpr = `( 6371000 * acos( LEAST(1.0, cos(radians(e.lat)) * cos(radians(?)) * cos(radians(?) - radians(e.lng)) + sin(radians(e.lat)) * sin(radians(?)) ) ) ) <= ?`;
+      const zips = Array.isArray(zipCodesInRadius) && zipCodesInRadius.length > 0 ? zipCodesInRadius : [];
+      if (zips.length === 0) {
+        whereClauses.push(`(e.lat IS NOT NULL AND e.lng IS NOT NULL AND ${haversineExpr})`);
+        params.push(centerLat, centerLng, centerLat, radiusMeters);
+        return;
+      }
+      const placeholders = zips.map(() => "?").join(", ");
+      whereClauses.push(
+        `( (e.lat IS NOT NULL AND e.lng IS NOT NULL AND ${haversineExpr}) OR (e.zip_code IN (${placeholders})) )`
+      );
+      params.push(centerLat, centerLng, centerLat, radiusMeters, ...zips);
+    };
+
+    // Radius search: by zip OR by lat/lng
+    const radiusValue = parseRadius(radius);
+    const hasZip = zip && String(zip).trim() !== "";
+    const hasLatLng = lat != null && lng != null && String(lat).trim() !== "" && String(lng).trim() !== "";
+
+    if (hasZip && radiusValue) {
+      const zipCode = String(zip).trim();
+      let centerLat = null;
+      let centerLng = null;
 
       try {
-        // Look up zip in zip_locations table (may not exist if migration not run)
         const zipQuery = "SELECT lat, lng FROM zip_locations WHERE zip_code = ? LIMIT 1";
         const [zipRows] = await pool.execute(zipQuery, [zipCode]);
-
         if (zipRows && zipRows.length > 0) {
-          const centerLat = zipRows[0].lat;
-          const centerLng = zipRows[0].lng;
-          const radiusMeters = radiusValue * 1609.34; // Convert miles to meters
-
-          // For radius search, require lat/lng to be NOT NULL
-          whereClauses.push("e.lat IS NOT NULL", "e.lng IS NOT NULL");
-
-          // Postgres: Haversine formula (meters). No ST_Distance_Sphere in Postgres.
-          whereClauses.push(
-            `( 6371000 * acos( LEAST(1.0, cos(radians(e.lat)) * cos(radians(?)) * cos(radians(?) - radians(e.lng)) + sin(radians(e.lat)) * sin(radians(?)) ) ) ) <= ?`
-          );
-          params.push(centerLat, centerLng, centerLat, radiusMeters);
+          centerLat = parseFloat(zipRows[0].lat);
+          centerLng = parseFloat(zipRows[0].lng);
+        }
+        // Fallback: geocode zip via Nominatim if not in zip_locations
+        if (centerLat == null || centerLng == null || !Number.isFinite(centerLat) || !Number.isFinite(centerLng)) {
+          const geocoded = await geocodeAddress(null, null, null, null, zipCode);
+          if (geocoded) {
+            centerLat = geocoded.lat;
+            centerLng = geocoded.lng;
+            await cacheZipInLocations(zipCode, centerLat, centerLng);
+          }
+        }
+        // Purely geographic: any US zip works. Events shown are within radius of this zip (all states) unless state filter is set above.
+        if (centerLat != null && centerLng != null && Number.isFinite(centerLat) && Number.isFinite(centerLng)) {
+          let zipsInRadius = [zipCode];
+          try {
+            const radiusMeters = radiusValue * 1609.34;
+            const haversineZl = `( 6371000 * acos( LEAST(1.0, cos(radians(z.lat)) * cos(radians(?)) * cos(radians(?) - radians(z.lng)) + sin(radians(z.lat)) * sin(radians(?)) ) ) ) <= ?`;
+            const [zipsRows] = await pool.execute(
+              `SELECT z.zip_code FROM zip_locations z WHERE z.lat IS NOT NULL AND z.lng IS NOT NULL AND ${haversineZl}`,
+              [centerLat, centerLng, centerLat, radiusMeters]
+            );
+            if (zipsRows && zipsRows.length > 0) {
+              zipsInRadius = zipsRows.map((r) => String(r.zip_code).trim()).filter(Boolean);
+              if (!zipsInRadius.includes(zipCode)) zipsInRadius.unshift(zipCode);
+            }
+          } catch (e) {
+            console.warn("Zips-in-radius lookup failed, using search zip only:", e.message);
+          }
+          addZipRadiusFilter(centerLat, centerLng, radiusValue, zipsInRadius);
         } else {
-          // Zip not found in zip_locations, return empty results
-          return res.status(200).json([]);
+          whereClauses.push("e.zip_code = ?");
+          params.push(zipCode);
         }
       } catch (zipErr) {
-        // zip_locations table may not exist or other DB error - return empty results
-        console.warn("Zip/radius filter error (zip_locations may be missing):", zipErr.message);
-        return res.status(200).json([]);
+        console.warn("Zip/radius filter error:", zipErr.message);
+        whereClauses.push("e.zip_code = ?");
+        params.push(zipCode);
+      }
+    } else if (hasLatLng && radiusValue) {
+      const centerLat = parseFloat(lat);
+      const centerLng = parseFloat(lng);
+      if (Number.isFinite(centerLat) && Number.isFinite(centerLng)) {
+        const radiusMeters = radiusValue * 1609.34;
+        whereClauses.push("e.lat IS NOT NULL", "e.lng IS NOT NULL");
+        whereClauses.push(
+          `( 6371000 * acos( LEAST(1.0, cos(radians(e.lat)) * cos(radians(?)) * cos(radians(?) - radians(e.lng)) + sin(radians(e.lat)) * sin(radians(?)) ) ) ) <= ?`
+        );
+        params.push(centerLat, centerLng, centerLat, radiusMeters);
       }
     }
 
@@ -294,6 +428,8 @@ router.get("/", async (req, res) => {
     } else if (orderBy === "starts_at") {
       const orderDirection = order === "DESC" ? "DESC" : "ASC";
       orderByClause = `e.starts_at ${orderDirection}`;
+    } else if (orderBy === "random") {
+      orderByClause = "RANDOM()";
     }
 
     // Use a subquery approach to avoid GROUP BY issues with ONLY_FULL_GROUP_BY
@@ -369,6 +505,55 @@ router.get("/", async (req, res) => {
   }
 });
 
+// GET /api/events/my/past - Get past (ended) events created by the current user
+router.get("/my/past", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const pastCondition = "((e.ends_at IS NOT NULL AND e.ends_at < NOW()) OR (e.ends_at IS NULL AND e.starts_at < NOW()))";
+    const sql = `
+      SELECT 
+        e.id,
+        e.title,
+        e.description,
+        e.starts_at,
+        e.ends_at,
+        e.venue,
+        e.address_line1,
+        e.address_line2,
+        e.city,
+        e.state,
+        e.zip_code,
+        e.location,
+        e.category,
+        e.status,
+        e.is_public,
+        e.capacity,
+        e.main_image,
+        e.image_2,
+        e.image_3,
+        e.image_4,
+        e.created_at,
+        e.updated_at,
+        COALESCE(rsvp_counts.rsvp_count, 0) as rsvp_count
+      FROM events e
+      LEFT JOIN (
+        SELECT event_id, COUNT(*) as rsvp_count
+        FROM rsvps
+        WHERE status = 'going'
+        GROUP BY event_id
+      ) rsvp_counts ON e.id = rsvp_counts.event_id
+      WHERE e.created_by = ?
+        AND ${pastCondition}
+      ORDER BY e.starts_at DESC
+    `;
+    const [rows] = await pool.execute(sql, [userId]);
+    return res.status(200).json(rows || []);
+  } catch (error) {
+    console.error("Failed to fetch my past events:", error);
+    return res.status(500).json({ message: "Failed to fetch past events" });
+  }
+});
+
 // GET /api/events/my - Get events created by the current user (hosting)
 router.get("/my", authenticateToken, async (req, res) => {
   try {
@@ -407,6 +592,7 @@ router.get("/my", authenticateToken, async (req, res) => {
         GROUP BY event_id
       ) rsvp_counts ON e.id = rsvp_counts.event_id
       WHERE e.created_by = ?
+        AND ${NOT_ENDED_SQL}
       ORDER BY e.starts_at ASC
     `;
 
@@ -458,6 +644,7 @@ router.get("/attending", authenticateToken, async (req, res) => {
       WHERE r.user_id = ?
         AND e.status = 'approved'
         AND e.is_public = true
+        AND ${NOT_ENDED_SQL}
       ORDER BY e.starts_at ASC
     `;
 
@@ -833,6 +1020,80 @@ router.post("/:id/discussion", authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/events/:id/organizer-analytics - Event analytics for organizer (attendees, signup dates, etc.)
+router.get("/:id/organizer-analytics", authenticateToken, async (req, res) => {
+  try {
+    const eventId = Number.parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(eventId)) {
+      return res.status(404).json({ message: "Event not found" });
+    }
+    const userId = req.user.id;
+
+    const [eventRows] = await pool.execute(
+      `SELECT id, title, description, starts_at, ends_at, venue, address_line1, address_line2, city, state, zip_code, location, category, status, capacity, ticket_price, created_at, created_by
+       FROM events WHERE id = ? AND created_by = ? LIMIT 1`,
+      [eventId, userId]
+    );
+    if (!eventRows || eventRows.length === 0) {
+      return res.status(404).json({ message: "Event not found or you are not the organizer" });
+    }
+
+    const [attendeesRows] = await pool.execute(
+      `SELECT r.id as rsvp_id, r.created_at as signed_up_at, r.status as rsvp_status,
+              u.id as user_id, u.first_name, u.last_name, u.email
+       FROM rsvps r
+       INNER JOIN users u ON r.user_id = u.id
+       WHERE r.event_id = ? AND r.status = 'going'
+       ORDER BY r.created_at ASC`,
+      [eventId]
+    );
+
+    const [rsvpCountRow] = await pool.execute(
+      `SELECT COUNT(*)::int as count FROM rsvps WHERE event_id = ? AND status = 'going'`,
+      [eventId]
+    );
+    const attendingCount = rsvpCountRow?.[0]?.count ?? 0;
+
+    const event = eventRows[0];
+    const attendees = (attendeesRows || []).map((row) => ({
+      rsvp_id: row.rsvp_id,
+      user_id: row.user_id,
+      first_name: row.first_name,
+      last_name: row.last_name,
+      email: row.email,
+      signed_up_at: row.signed_up_at,
+      rsvp_status: row.rsvp_status,
+    }));
+
+    return res.status(200).json({
+      event: {
+        id: event.id,
+        title: event.title,
+        description: event.description,
+        starts_at: event.starts_at,
+        ends_at: event.ends_at,
+        venue: event.venue,
+        address_line1: event.address_line1,
+        address_line2: event.address_line2,
+        city: event.city,
+        state: event.state,
+        zip_code: event.zip_code,
+        location: event.location,
+        category: event.category,
+        status: event.status,
+        capacity: event.capacity,
+        ticket_price: event.ticket_price,
+        created_at: event.created_at,
+      },
+      attending_count: attendingCount,
+      attendees,
+    });
+  } catch (err) {
+    console.error("Organizer analytics error:", err);
+    return res.status(500).json({ message: "Failed to load event analytics" });
+  }
+});
+
 // GET /api/events/:id - Fetch single event
 // Public: only approved, public events
 // Authenticated: can view own events regardless of status, or approved public events
@@ -970,6 +1231,13 @@ router.get("/:id", async (req, res) => {
 
     if (!event) {
       return res.status(404).json({ message: "Event not found" });
+    }
+
+    if (isEventEnded(event)) {
+      const creatorId = event.created_by != null ? String(event.created_by) : null;
+      if (!userId || creatorId !== String(userId)) {
+        return res.status(404).json({ message: "Event not found" });
+      }
     }
 
     // Format organizer info
