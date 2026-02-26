@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { getCurrentUser } from "../../utils/auth";
-import { getAdminStats, getAllEvents, approveEvent, declineEvent, adminDeleteEvent, getAllUsers, getUserDetails, deleteUser, unattendUserFromEvent, getAnalytics, getHeroSettings, updateHeroSettings, uploadHeroImage, getContentSettings, updateContentSettings, getAdminCategories, addAdminCategory, updateAdminCategory, deleteAdminCategory } from "../../api";
+import { getAdminStats, getAllEvents, approveEvent, declineEvent, adminDeleteEvent, getAllUsers, getUserDetails, deleteUser, unattendUserFromEvent, getAnalytics, getHeroSettings, updateHeroSettings, uploadHeroImage, uploadFoundersImage, getContentSettings, updateContentSettings, getAdminCategories, addAdminCategory, updateAdminCategory, deleteAdminCategory, backfillEventCoordinates, getImageUrl } from "../../api";
 
 function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -12,11 +12,18 @@ function AdminDashboardPage() {
     totalEvents: 0,
     pendingApprovals: 0,
     popularCategory: { name: "N/A", count: 0 },
+    usersThisMonth: 0,
+    usersLastMonth: 0,
+    eventsThisMonth: 0,
+    eventsLastMonth: 0,
+    usersPercentChange: null,
+    eventsPercentChange: null,
   });
   const [events, setEvents] = useState([]);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [eventStatusFilter, setEventStatusFilter] = useState("all"); // "all" | "pending" | "approved" | "declined"
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState("");
@@ -34,16 +41,107 @@ function AdminDashboardPage() {
     home_about_title: "",
     home_about_body: "",
     home_most_attended_title: "",
+    home_founders_image: "",
   });
   const [adminCategories, setAdminCategories] = useState([]);
   const [customizeLoading, setCustomizeLoading] = useState(false);
   const [customizeSaving, setCustomizeSaving] = useState(false);
+  const [heroSaveStatus, setHeroSaveStatus] = useState(null); // 'success' | 'error' | null
+  const [heroSaveMessage, setHeroSaveMessage] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
   const [editingCategoryId, setEditingCategoryId] = useState(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
   const hasLoadedRef = useRef(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillResult, setBackfillResult] = useState(null);
 
-  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+  // Build CSV and trigger download: eventure_anal_YYYY-MM-DD.csv
+  const handleExportData = useCallback(async () => {
+    setExportLoading(true);
+    try {
+      const data = analytics ? { ...analytics } : await getAnalytics();
+      if (!data) {
+        alert("No analytics data available to export.");
+        return;
+      }
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const rows = [];
+
+      rows.push("Eventure Analytics Export");
+      rows.push(`Exported,${dateStr}`);
+      rows.push("");
+
+      const escapeCsv = (v) => {
+        const s = String(v ?? "");
+        if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
+        return s;
+      };
+
+      if (data.thisMonth != null && data.currentMonthLabel) {
+        rows.push(`Section,This month (${escapeCsv(data.currentMonthLabel)})`);
+        rows.push("Metric,Value");
+        rows.push(`New Users,${escapeCsv(data.thisMonth.users)}`);
+        rows.push(`Events Created,${escapeCsv(data.thisMonth.events)}`);
+        rows.push(`RSVPs (going),${escapeCsv(data.thisMonth.rsvps)}`);
+        rows.push("");
+      }
+
+      if (data.totals) {
+        rows.push("Section,Totals");
+        rows.push("Metric,Value");
+        rows.push(`Total Users,${escapeCsv(data.totals.totalUsers)}`);
+        rows.push(`Total Events,${escapeCsv(data.totals.totalEvents)}`);
+        rows.push(`Approved Events,${escapeCsv(data.totals.approvedEvents)}`);
+        rows.push(`Total RSVPs,${escapeCsv(data.totals.totalRsvps)}`);
+        rows.push("");
+      }
+
+      if (data.eventsOverTime?.length) {
+        rows.push("Section,Events Over Time");
+        rows.push("Month,Count");
+        data.eventsOverTime.forEach((r) => rows.push(`${escapeCsv(r.month)},${escapeCsv(r.count)}`));
+        rows.push("");
+      }
+      if (data.usersOverTime?.length) {
+        rows.push("Section,Users Over Time");
+        rows.push("Month,Count");
+        data.usersOverTime.forEach((r) => rows.push(`${escapeCsv(r.month)},${escapeCsv(r.count)}`));
+        rows.push("");
+      }
+      if (data.rsvpsOverTime?.length) {
+        rows.push("Section,RSVPs Over Time");
+        rows.push("Month,Count");
+        data.rsvpsOverTime.forEach((r) => rows.push(`${escapeCsv(r.month)},${escapeCsv(r.count)}`));
+        rows.push("");
+      }
+      if (data.eventsByCategory?.length) {
+        rows.push("Section,Events by Category");
+        rows.push("Category,Count");
+        data.eventsByCategory.forEach((r) => rows.push(`${escapeCsv(r.category)},${escapeCsv(r.count)}`));
+        rows.push("");
+      }
+      if (data.eventsByStatus?.length) {
+        rows.push("Section,Events by Status");
+        rows.push("Status,Count");
+        data.eventsByStatus.forEach((r) => rows.push(`${escapeCsv(r.status)},${escapeCsv(r.count)}`));
+      }
+
+      const csv = rows.join("\r\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `eventure_anal_${dateStr}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export failed:", err);
+      alert(err.message || "Failed to export analytics data.");
+    } finally {
+      setExportLoading(false);
+    }
+  }, [analytics]);
 
   // Memoize user to prevent unnecessary re-renders - only parse once
   const user = useMemo(() => getCurrentUser(), []);
@@ -58,11 +156,28 @@ function AdminDashboardPage() {
       try {
         const statsData = await getAdminStats();
         console.log("Stats data:", statsData);
-        setStats(statsData || {
+        const raw = statsData || {
           totalUsers: 0,
           totalEvents: 0,
           pendingApprovals: 0,
           popularCategory: { name: "N/A", count: 0 },
+        };
+        const usersLast = Number(raw.usersLastMonth) || 0;
+        const usersThis = Number(raw.usersThisMonth) || 0;
+        const eventsLast = Number(raw.eventsLastMonth) || 0;
+        const eventsThis = Number(raw.eventsThisMonth) || 0;
+        setStats({
+          ...raw,
+          totalUsers: Number(raw.totalUsers) || 0,
+          totalEvents: Number(raw.totalEvents) || 0,
+          pendingApprovals: Number(raw.pendingApprovals) || 0,
+          popularCategory: raw.popularCategory || { name: "N/A", count: 0 },
+          usersThisMonth: usersThis,
+          usersLastMonth: usersLast,
+          eventsThisMonth: eventsThis,
+          eventsLastMonth: eventsLast,
+          usersPercentChange: usersLast > 0 ? Math.round(((usersThis - usersLast) / usersLast) * 100) : null,
+          eventsPercentChange: eventsLast > 0 ? Math.round(((eventsThis - eventsLast) / eventsLast) * 100) : null,
         });
       } catch (statsErr) {
         console.error("Failed to load stats:", statsErr);
@@ -71,6 +186,12 @@ function AdminDashboardPage() {
           totalEvents: 0,
           pendingApprovals: 0,
           popularCategory: { name: "N/A", count: 0 },
+          usersThisMonth: 0,
+          usersLastMonth: 0,
+          eventsThisMonth: 0,
+          eventsLastMonth: 0,
+          usersPercentChange: null,
+          eventsPercentChange: null,
         });
       }
       
@@ -260,12 +381,12 @@ function AdminDashboardPage() {
     }
   };
 
-  // Load users when users tab is active
+  // Load users when users tab is opened (fresh list each time)
   useEffect(() => {
-    if (activeTab === "users" && users.length === 0 && !usersLoading) {
+    if (activeTab === "users") {
       loadUsers();
     }
-  }, [activeTab, users.length, usersLoading, loadUsers]);
+  }, [activeTab, loadUsers]);
 
   // Load analytics when analytics tab is active
   const loadAnalytics = useCallback(async () => {
@@ -304,6 +425,7 @@ function AdminDashboardPage() {
         home_about_title: "",
         home_about_body: "",
         home_most_attended_title: "",
+        home_founders_image: "",
       });
       setAdminCategories(Array.isArray(categoriesData) ? categoriesData : []);
     } catch (err) {
@@ -331,28 +453,43 @@ function AdminDashboardPage() {
   const handleHeroImageUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setHeroSaveStatus(null);
+    setHeroSaveMessage("");
     try {
       setCustomizeSaving(true);
       const res = await uploadHeroImage(file);
       const imagePath = res?.url || res?.image || res?.path;
-      if (!imagePath) throw new Error("No image URL returned");
+      if (!imagePath) throw new Error("No image URL returned from server");
       setHero((prev) => ({ ...prev, type: "image", image: imagePath }));
       await updateHeroSettings({ type: "image", color: hero.color || "#2e6b4e", image: imagePath });
-      alert("Hero image updated!");
+      setHeroSaveStatus("success");
+      setHeroSaveMessage("Hero image uploaded and saved.");
+      setTimeout(() => { setHeroSaveStatus(null); setHeroSaveMessage(""); }, 4000);
     } catch (err) {
-      alert(err.message || "Failed to upload hero image");
+      const msg = err?.message || "Failed to upload or save hero image";
+      setHeroSaveStatus("error");
+      setHeroSaveMessage(msg);
+      console.error("Hero image upload/save error:", err);
     } finally {
       setCustomizeSaving(false);
     }
   };
 
-  const handleSaveHero = async () => {
+  const handleSaveHero = async (e) => {
+    if (e) e.preventDefault();
+    setHeroSaveStatus(null);
+    setHeroSaveMessage("");
     try {
       setCustomizeSaving(true);
-      await updateHeroSettings({ type: hero.type, color: hero.color || "#2e6b4e", image: hero.image });
-      alert("Hero settings saved!");
+      await updateHeroSettings({ type: hero.type, color: hero.color || "#2e6b4e", image: hero.image || null });
+      setHeroSaveStatus("success");
+      setHeroSaveMessage("Hero settings saved.");
+      setTimeout(() => { setHeroSaveStatus(null); setHeroSaveMessage(""); }, 4000);
     } catch (err) {
-      alert(err.message || "Failed to save hero settings");
+      const msg = err?.message || "Failed to save hero settings";
+      setHeroSaveStatus("error");
+      setHeroSaveMessage(msg);
+      console.error("Save hero error:", err);
     } finally {
       setCustomizeSaving(false);
     }
@@ -414,6 +551,21 @@ function AdminDashboardPage() {
       alert(err.message || "Failed to delete category");
     } finally {
       setCustomizeSaving(false);
+    }
+  };
+
+  const handleBackfillCoordinates = async () => {
+    if (!window.confirm("Geocode and save lat/lng for all events that are missing coordinates? This may take a minute (1 request per second).")) return;
+    try {
+      setBackfillLoading(true);
+      setBackfillResult(null);
+      const res = await backfillEventCoordinates();
+      setBackfillResult(res);
+      alert(`Done. Updated: ${res.updated}, Failed: ${res.failed}, Total processed: ${res.total}`);
+    } catch (err) {
+      alert(err.message || "Backfill failed");
+    } finally {
+      setBackfillLoading(false);
     }
   };
 
@@ -547,33 +699,6 @@ function AdminDashboardPage() {
               Users
             </button>
             <button
-              onClick={() => setActiveTab("reports")}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
-                activeTab === "reports"
-                  ? "bg-green-50 text-green-700 font-medium"
-                  : "text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
-                <polyline points="10 9 9 9 8 9" />
-              </svg>
-              Reports
-            </button>
-            <button
               onClick={() => setActiveTab("analytics")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
                 activeTab === "analytics"
@@ -662,8 +787,12 @@ function AdminDashboardPage() {
               <p className="text-gray-600">Manage events, users, and platform analytics</p>
             </div>
             <div className="flex items-center gap-4">
-              <button className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium">
-                Export Data
+              <button
+                onClick={handleExportData}
+                disabled={exportLoading}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {exportLoading ? "Exporting…" : "Export Data"}
               </button>
               <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-semibold">
                 {user?.firstName?.[0]?.toUpperCase() || "A"}
@@ -696,22 +825,31 @@ function AdminDashboardPage() {
                 </svg>
               </div>
               <p className="text-3xl font-bold text-gray-900 mb-2">{stats.totalUsers}</p>
-              <p className="text-sm text-green-600 flex items-center gap-1">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
-                  <polyline points="17 6 23 6 23 12" />
-                </svg>
-                +12% this month
+              <p className={`text-sm flex items-center gap-1 ${(stats.usersPercentChange ?? 0) > 0 ? "text-green-600" : (stats.usersPercentChange ?? 0) < 0 ? "text-red-600" : "text-gray-500"}`}>
+                {stats.usersPercentChange != null ? (
+                  <>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className={stats.usersPercentChange < 0 ? "rotate-180" : ""}
+                    >
+                      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+                      <polyline points="17 6 23 6 23 12" />
+                    </svg>
+                    {stats.usersPercentChange > 0 ? "+" : ""}{stats.usersPercentChange}% vs last month
+                  </>
+                ) : stats.usersLastMonth === 0 && stats.usersThisMonth > 0 ? (
+                  "New this month"
+                ) : (
+                  "— vs last month"
+                )}
               </p>
             </div>
 
@@ -738,27 +876,43 @@ function AdminDashboardPage() {
                 </svg>
               </div>
               <p className="text-3xl font-bold text-gray-900 mb-2">{stats.totalEvents}</p>
-              <p className="text-sm text-green-600 flex items-center gap-1">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
-                  <polyline points="17 6 23 6 23 12" />
-                </svg>
-                +8% this month
+              <p className={`text-sm flex items-center gap-1 ${(stats.eventsPercentChange ?? 0) > 0 ? "text-green-600" : (stats.eventsPercentChange ?? 0) < 0 ? "text-red-600" : "text-gray-500"}`}>
+                {stats.eventsPercentChange != null ? (
+                  <>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className={stats.eventsPercentChange < 0 ? "rotate-180" : ""}
+                    >
+                      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+                      <polyline points="17 6 23 6 23 12" />
+                    </svg>
+                    {stats.eventsPercentChange > 0 ? "+" : ""}{stats.eventsPercentChange}% vs last month
+                  </>
+                ) : stats.eventsLastMonth === 0 && stats.eventsThisMonth > 0 ? (
+                  "New this month"
+                ) : (
+                  "— vs last month"
+                )}
               </p>
             </div>
 
-            {/* Pending Approval */}
-            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+            {/* Pending Approval - clickable to open Events tab with Pending filter */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("events");
+                setEventStatusFilter("pending");
+              }}
+              className="w-full bg-white rounded-xl shadow-sm p-6 border border-gray-200 text-left hover:border-orange-300 hover:shadow-md transition-all"
+            >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-gray-600">Pending Approval</h3>
                 <svg
@@ -778,8 +932,8 @@ function AdminDashboardPage() {
                 </svg>
               </div>
               <p className="text-3xl font-bold text-gray-900 mb-2">{stats.pendingApprovals}</p>
-              <p className="text-sm text-red-600">Requires attention</p>
-            </div>
+              <p className="text-sm text-red-600">Requires attention — click to review</p>
+            </button>
 
             {/* Popular Category */}
             <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
@@ -811,11 +965,42 @@ function AdminDashboardPage() {
           {activeTab === "events" && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
               <div className="p-6 border-b border-gray-200">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
                   <div>
                     <h2 className="text-xl font-semibold text-gray-900 mb-1">Event Management</h2>
                     <p className="text-sm text-gray-600">Review and manage all platform events</p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => { loadData(); }}
+                    disabled={eventsLoading}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+                    Refresh
+                  </button>
+                </div>
+                {/* Status filter */}
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {["all", "pending", "approved", "declined"].map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() => setEventStatusFilter(status)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                        eventStatusFilter === status
+                          ? "bg-[#2e6b4e] text-white"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      {status === "all" ? "All" : status.charAt(0).toUpperCase() + status.slice(1)}
+                      {status === "pending" && stats.pendingApprovals > 0 && (
+                        <span className="ml-1.5 bg-white/90 text-[#2e6b4e] px-1.5 py-0.5 rounded text-xs">
+                          {stats.pendingApprovals}
+                        </span>
+                      )}
+                    </button>
+                  ))}
                 </div>
                 {/* Search Bar */}
                 <div className="mt-4">
@@ -871,16 +1056,23 @@ function AdminDashboardPage() {
                 {eventsLoading ? (
                   <div className="p-8 text-center text-gray-600">Loading events...</div>
                 ) : (() => {
-                  // Filter events based on search query
-                  const filteredEvents = searchQuery.trim()
+                  // Filter by search then by status
+                  let filteredEvents = searchQuery.trim()
                     ? events.filter((event) =>
                         event.title?.toLowerCase().includes(searchQuery.toLowerCase())
                       )
                     : events;
+                  if (eventStatusFilter !== "all") {
+                    filteredEvents = filteredEvents.filter((e) => e.status === eventStatusFilter);
+                  }
                   
                   return filteredEvents.length === 0 ? (
                     <div className="p-8 text-center text-gray-600">
-                      {searchQuery ? `No events found matching "${searchQuery}"` : "No events found"}
+                      {searchQuery
+                        ? `No events found matching "${searchQuery}"`
+                        : eventStatusFilter !== "all"
+                        ? `No ${eventStatusFilter} events`
+                        : "No events found"}
                     </div>
                   ) : (
                     <table className="w-full">
@@ -1020,11 +1212,20 @@ function AdminDashboardPage() {
           {activeTab === "users" && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
               <div className="p-6 border-b border-gray-200">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
                   <div>
                     <h2 className="text-xl font-semibold text-gray-900 mb-1">User Management</h2>
                     <p className="text-sm text-gray-600">View and manage platform users</p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => loadUsers()}
+                    disabled={usersLoading}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+                    Refresh
+                  </button>
                 </div>
                 {/* Search Bar */}
                 <div className="mt-4">
@@ -1152,6 +1353,17 @@ function AdminDashboardPage() {
           {/* Analytics Section */}
           {activeTab === "analytics" && (
             <div className="space-y-6">
+              <div className="flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => loadAnalytics()}
+                  disabled={analyticsLoading}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+                  Refresh analytics
+                </button>
+              </div>
               {analyticsLoading ? (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-2"></div>
@@ -1159,6 +1371,28 @@ function AdminDashboardPage() {
                 </div>
               ) : analytics ? (
                 <>
+                  {/* This month (resets each month) */}
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                      This month {analytics.currentMonthLabel || new Date().toLocaleString("en-US", { month: "long", year: "numeric" })}
+                    </h3>
+                    <p className="text-sm text-gray-600 mb-4">Counts for the current month; resets at the start of each month.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <p className="text-sm font-medium text-gray-600">New users</p>
+                        <p className="text-2xl font-bold text-gray-900">{analytics.thisMonth?.users ?? 0}</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <p className="text-sm font-medium text-gray-600">Events created</p>
+                        <p className="text-2xl font-bold text-gray-900">{analytics.thisMonth?.events ?? 0}</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <p className="text-sm font-medium text-gray-600">RSVPs (going)</p>
+                        <p className="text-2xl font-bold text-gray-900">{analytics.thisMonth?.rsvps ?? 0}</p>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Key Insights */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                     <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
@@ -1195,7 +1429,7 @@ function AdminDashboardPage() {
                     <div className="flex items-center justify-between mb-6">
                       <div>
                         <h3 className="text-xl font-semibold text-gray-900">Growth Trends</h3>
-                        <p className="text-sm text-gray-600 mt-1">Platform activity over the last 12 months</p>
+                        <p className="text-sm text-gray-600 mt-1">Last 12 months ending with current month</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1400,6 +1634,17 @@ function AdminDashboardPage() {
           {/* Customize Section */}
           {activeTab === "customize" && (
             <div className="space-y-6">
+              <div className="flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => loadCustomizeData()}
+                  disabled={customizeLoading}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+                  Refresh settings
+                </button>
+              </div>
               {customizeLoading ? (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-2"></div>
@@ -1461,7 +1706,7 @@ function AdminDashboardPage() {
                           {hero.image && (
                             <div className="mb-3">
                               <img
-                                src={hero.image.startsWith("http") ? hero.image : `${API_URL}${hero.image}`}
+                                src={getImageUrl(hero.image)}
                                 alt="Hero preview"
                                 className="max-h-40 rounded-lg border border-gray-200 object-cover"
                               />
@@ -1477,12 +1722,19 @@ function AdminDashboardPage() {
                         </div>
                       )}
                       <button
+                        type="button"
                         onClick={handleSaveHero}
                         disabled={customizeSaving}
                         className="px-4 py-2 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] disabled:opacity-50"
                       >
                         {customizeSaving ? "Saving..." : "Save Hero"}
                       </button>
+                      {heroSaveStatus === "success" && (
+                        <p className="text-sm text-green-600 mt-2" role="status">{heroSaveMessage}</p>
+                      )}
+                      {heroSaveStatus === "error" && (
+                        <p className="text-sm text-red-600 mt-2" role="alert">{heroSaveMessage}</p>
+                      )}
                     </div>
                   </div>
 
@@ -1529,6 +1781,32 @@ function AdminDashboardPage() {
                           rows={4}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
                           placeholder="Describe your platform..."
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Founders Photo (How Eventure Started)</label>
+                        <p className="text-xs text-gray-500 mb-2">Upload a photo to show in the &quot;How Eventure Started&quot; section on the home page. It is stored on the server so it appears for all users.</p>
+                        {content.home_founders_image ? (
+                          <div className="flex items-center gap-4 mb-2">
+                            <img src={getImageUrl(content.home_founders_image)} alt="Founders" className="h-20 w-auto rounded-lg border border-gray-200 object-contain" />
+                            <button type="button" onClick={() => setContent((prev) => ({ ...prev, home_founders_image: "" }))} className="text-sm text-red-600 hover:underline">Remove</button>
+                          </div>
+                        ) : null}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-[#2e6b4e] file:text-white file:cursor-pointer hover:file:bg-[#255a43]"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            try {
+                              const res = await uploadFoundersImage(file);
+                              if (res?.url) setContent((prev) => ({ ...prev, home_founders_image: res.url }));
+                              e.target.value = "";
+                            } catch (err) {
+                              alert(err.message || "Upload failed");
+                            }
+                          }}
                         />
                       </div>
                       <div>
@@ -1623,6 +1901,34 @@ function AdminDashboardPage() {
                     </ul>
                     {adminCategories.length === 0 && (
                       <p className="text-gray-500 text-sm py-4">No categories yet. Add one above.</p>
+                    )}
+                  </div>
+
+                  {/* Map coordinates backfill */}
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Map coordinates</h2>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Events missing lat/lng show a pin based on geocoding when the page loads. Run this once to save coordinates for all events so map pins stay accurate.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleBackfillCoordinates}
+                      disabled={backfillLoading}
+                      className="px-4 py-2 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {backfillLoading ? (
+                        <>
+                          <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                          Backfilling…
+                        </>
+                      ) : (
+                        "Backfill map coordinates"
+                      )}
+                    </button>
+                    {backfillResult && (
+                      <p className="text-sm text-gray-600 mt-3">
+                        Updated: {backfillResult.updated}, Failed: {backfillResult.failed}, Total: {backfillResult.total}
+                      </p>
                     )}
                   </div>
                 </>

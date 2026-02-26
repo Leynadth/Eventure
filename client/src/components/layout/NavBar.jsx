@@ -92,176 +92,119 @@ function NavBar() {
   return (
     <header className="bg-white border-b border-[#e2e8f0] sticky top-0 z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 lg:h-20">
+        <div className="flex items-center justify-between h-14 lg:h-16 gap-4">
           {/* Logo */}
           <Link 
             to="/" 
-            className="flex items-center gap-2 group"
+            className="flex items-center shrink-0 group"
             onClick={() => setMobileMenuOpen(false)}
           >
             <img 
               src="/eventure-logo.png" 
               alt="Eventure" 
-              className="h-10 lg:h-12 w-auto shrink-0 transition-transform group-hover:scale-105"
+              className="h-12 lg:h-14 w-auto object-contain transition-opacity group-hover:opacity-90"
             />
           </Link>
 
-          {/* Desktop Navigation Links */}
-          <nav className="hidden lg:flex items-center gap-1">
-            <Link
-              to="/"
-              className={navLinkClass("/")}
-            >
-              Home
-            </Link>
-            <Link
-              to="/browse"
-              className={navLinkClass("/browse")}
-            >
-              Browse Events
-            </Link>
+          {/* Desktop: center nav links */}
+          <nav className="hidden lg:flex items-center gap-0.5 flex-1 justify-center">
+            <Link to="/" className={navLinkClass("/")}>Home</Link>
+            <Link to="/browse" className={navLinkClass("/browse")}>Browse Events</Link>
             {isLoggedIn && (
               <>
-                <Link
-                  to="/favorites"
-                  className={navLinkClass("/favorites")}
-                >
-                  Favorites
-                </Link>
-                <Link
-                  to="/my-events"
-                  className={navLinkClass("/my-events")}
-                >
-                  My Events
-                </Link>
+                <Link to="/favorites" className={navLinkClass("/favorites")}>Favorites</Link>
+                <Link to="/my-events" className={navLinkClass("/my-events")}>My Events</Link>
               </>
             )}
           </nav>
 
-          {/* Desktop Right Side */}
-          <div className="hidden lg:flex items-center gap-3">
-            {isLoggedIn ? (
+          {/* Desktop: right side — guest */}
+          <div className="hidden lg:flex items-center shrink-0 gap-2">
+            {!isLoggedIn && (
               <>
+                <Link
+                  to="/login"
+                  className="px-4 py-2.5 text-sm font-medium text-[#475569] hover:text-[#2e6b4e] hover:bg-[#f8fafc] rounded-lg transition-colors"
+                >
+                  Log in
+                </Link>
+                <Link
+                  to="/register"
+                  className="px-4 py-2.5 text-sm font-medium bg-[#2e6b4e] text-white rounded-lg hover:bg-[#255a43] transition-colors shadow-sm"
+                >
+                  Sign up
+                </Link>
+              </>
+            )}
+
+            {/* Desktop: right side — logged in */}
+            {isLoggedIn && (
+              <div className="hidden lg:flex items-center gap-3">
                 {(user.role === "organizer" || user.role === "admin") && (
                   <Link
                     to="/events/new"
-                    className="px-4 py-2 bg-[#2e6b4e] text-white rounded-lg text-sm font-medium hover:bg-[#255a43] transition-all duration-200 shadow-sm hover:shadow-md"
+                    className="px-4 py-2.5 bg-[#2e6b4e] text-white rounded-lg text-sm font-medium hover:bg-[#255a43] transition-colors shadow-sm shrink-0"
                   >
                     + Create Event
                   </Link>
                 )}
-                <div className="flex items-center gap-3 pl-4 border-l border-[#e2e8f0]">
-                  {/* Profile Picture Avatar */}
+                <div className="flex items-center gap-3 pl-3 border-l border-[#e2e8f0]">
                   {profilePictureUrl ? (
                     <img
                       src={profilePictureUrl}
-                      alt={`${user.firstName} ${user.lastName}`}
-                      className="w-10 h-10 rounded-full object-cover border-2 border-[#e2e8f0]"
+                      alt=""
+                      className="w-9 h-9 rounded-full object-cover border border-[#e2e8f0] shrink-0"
                     />
                   ) : (
-                    <div className="w-10 h-10 rounded-full bg-[#2e6b4e] flex items-center justify-center text-white text-sm font-semibold border-2 border-[#e2e8f0]">
+                    <div className="w-9 h-9 rounded-full bg-[#2e6b4e] flex items-center justify-center text-white text-xs font-semibold border border-[#e2e8f0] shrink-0">
                       {initials}
                     </div>
                   )}
-                  
-                  {/* Settings Icon with Dropdown */}
-                  <div 
-                    className="relative"
+                  <div className="relative min-w-0 max-w-[140px]">
+                    <p className="text-sm font-semibold text-[#0f172b] truncate">{user.firstName} {user.lastName}</p>
+                    <p className="text-xs text-[#64748b] truncate">{user.email}</p>
+                  </div>
+                  <RoleBadge role={user.role} />
+                  <div
+                    className="relative shrink-0"
                     onMouseEnter={() => setSettingsDropdownOpen(true)}
-                    onMouseLeave={() => {
-                      // Small delay to allow moving to dropdown
-                      setTimeout(() => setSettingsDropdownOpen(false), 200);
-                    }}
+                    onMouseLeave={() => setTimeout(() => setSettingsDropdownOpen(false), 150)}
                   >
                     <button
-                      className="p-1.5 text-[#ef4444] hover:text-[#dc2626] hover:bg-red-50 rounded-full transition-all duration-200"
+                      className="p-2 text-[#64748b] hover:text-[#2e6b4e] hover:bg-[#f8fafc] rounded-lg transition-colors"
                       aria-label="Settings"
                     >
-                      <svg 
-                        className="w-5 h-5" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        viewBox="0 0 24 24"
-                      >
-                        <path 
-                          strokeLinecap="round" 
-                          strokeLinejoin="round" 
-                          strokeWidth={2} 
-                          d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" 
-                        />
-                        <path 
-                          strokeLinecap="round" 
-                          strokeLinejoin="round" 
-                          strokeWidth={2} 
-                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" 
-                        />
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                       </svg>
                     </button>
-                    
-                    {/* Dropdown Menu - with padding to bridge gap */}
                     {settingsDropdownOpen && (
-                      <div 
-                        className="absolute right-0 top-full pt-2 w-48 z-50"
+                      <div
+                        className="absolute right-0 top-full pt-1.5 w-44 z-50"
                         onMouseEnter={() => setSettingsDropdownOpen(true)}
                         onMouseLeave={() => setSettingsDropdownOpen(false)}
                       >
-                        <div className="bg-white rounded-lg shadow-lg border border-[#e2e8f0] py-2">
-                          <Link
-                            to="/my-account"
-                            className="block px-4 py-2 text-sm text-[#45556c] hover:bg-gray-50 hover:text-[#2e6b4e] transition-colors"
-                            onClick={() => setSettingsDropdownOpen(false)}
-                          >
-                            My Account
-                          </Link>
-                          {user.role === "admin" && (
-                            <Link
-                              to="/admin"
-                              className="block px-4 py-2 text-sm text-[#45556c] hover:bg-gray-50 hover:text-[#2e6b4e] transition-colors"
-                              onClick={() => setSettingsDropdownOpen(false)}
-                            >
-                              Admin Panel
-                            </Link>
-                          )}
+                        <div className="bg-white rounded-lg shadow-lg border border-[#e2e8f0] py-1.5">
+                          <Link to="/my-account" className="block px-4 py-2 text-sm text-[#475569] hover:bg-[#f8fafc] hover:text-[#2e6b4e]" onClick={() => setSettingsDropdownOpen(false)}>My Account</Link>
+                          {user.role === "admin" && <Link to="/admin" className="block px-4 py-2 text-sm text-[#475569] hover:bg-[#f8fafc] hover:text-[#2e6b4e]" onClick={() => setSettingsDropdownOpen(false)}>Admin Panel</Link>}
                         </div>
                       </div>
                     )}
                   </div>
-
-                  <div className="text-right">
-                    <p className="text-sm font-semibold text-[#0f172b]">
-                      {user.firstName} {user.lastName}
-                    </p>
-                    <p className="text-xs text-[#62748e]">{user.email}</p>
-                  </div>
-                  <RoleBadge role={user.role} />
                   <button
                     onClick={handleLogout}
-                    className="px-4 py-2 text-sm text-[#62748e] hover:text-[#2e6b4e] hover:bg-gray-50 rounded-lg transition-all duration-200 font-medium"
+                    className="px-3 py-2 text-sm font-medium text-[#64748b] hover:text-[#2e6b4e] hover:bg-[#f8fafc] rounded-lg transition-colors shrink-0"
                   >
-                    Logout
+                    Log out
                   </button>
                 </div>
-              </>
-            ) : (
-              <>
-                <Link
-                  to="/login"
-                  className="px-4 py-2 text-sm text-[#62748e] hover:text-[#2e6b4e] hover:bg-gray-50 rounded-lg transition-all duration-200 font-medium"
-                >
-                  Login
-                </Link>
-                <Link
-                  to="/register"
-                  className="px-4 py-2 bg-[#2e6b4e] text-white rounded-lg text-sm font-medium hover:bg-[#255a43] transition-all duration-200 shadow-sm hover:shadow-md"
-                >
-                  Sign Up
-                </Link>
-              </>
+              </div>
             )}
           </div>
 
-          {/* Mobile Menu Button */}
-          <div className="lg:hidden flex items-center gap-3">
+          {/* Mobile: hamburger + Create */}
+          <div className="lg:hidden flex items-center gap-2 shrink-0">
             {isLoggedIn && (user.role === "organizer" || user.role === "admin") && (
               <Link
                 to="/events/new"

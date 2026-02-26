@@ -6,6 +6,35 @@ const { sendMail } = require("../utils/mailer");
 
 const router = express.Router();
 
+/** Geocode address via Nominatim; returns { lat, lng } or null. Used for map pin accuracy. */
+async function geocodeAddress(venue, addressLine1, city, state, zipCode) {
+  const parts = [
+    venue && String(venue).trim(),
+    addressLine1 && String(addressLine1).trim(),
+    city && String(city).trim(),
+    state && String(state).trim(),
+    zipCode && String(zipCode).trim(),
+  ].filter(Boolean);
+  if (parts.length === 0) return null;
+  const query = parts.join(", ");
+  if (query.length < 5) return null;
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+      { headers: { "User-Agent": "Eventure/1.0 (https://eventure.com/contact)" } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) return null;
+    const lat = parseFloat(data[0].lat);
+    const lon = parseFloat(data[0].lon);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lng: lon };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function parseOptionalLimit(value) {
   if (value === undefined || value === null || value === "") return undefined;
   const n = Number.parseInt(String(value), 10);
@@ -88,36 +117,47 @@ router.post("/", authenticateToken, authorize(["organizer", "admin"]), async (re
       }
     }
 
-    // Prepare SQL insert (RETURNING id for Postgres)
+    // Ensure all string fields are properly truncated to match DB column sizes
+    const safeState = state ? String(state).trim().substring(0, 49) : null;
+    const safeCity = city ? String(city).trim().substring(0, 100) : null;
+    const safeZip = zip_code ? String(zip_code).trim().substring(0, 10) : null;
+    const safeVenue = venue ? String(venue).trim() : null;
+    const safeAddressLine1 = address_line1 ? String(address_line1).trim() : null;
+
+    // Geocode address so map pin is accurate (store lat/lng)
+    let coords = null;
+    try {
+      coords = await geocodeAddress(safeVenue, safeAddressLine1, safeCity, safeState, safeZip);
+    } catch (e) {
+      // non-fatal; event still created, map will geocode client-side
+    }
+
     const sql = `
       INSERT INTO events (
         title, description, category, starts_at, ends_at,
         venue, address_line1, address_line2, city, state, zip_code, location,
+        lat, lng,
         tags, ticket_price, capacity, main_image, image_2, image_3, image_4,
         is_public, created_by, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
       RETURNING id
     `;
 
-    // Ensure all string fields are properly truncated to match DB column sizes
-    // Use 49 for state to be extra safe (VARCHAR(50) should handle 50, but let's be conservative)
-    const safeState = state ? String(state).trim().substring(0, 49) : null;
-    const safeCity = city ? String(city).trim().substring(0, 100) : null;
-    const safeZip = zip_code ? String(zip_code).trim().substring(0, 10) : null;
-    
     const params = [
       String(title).trim(),
       String(description || "").trim(),
       String(category).trim(),
       startDate.toISOString().slice(0, 19).replace("T", " "),
       endDate ? endDate.toISOString().slice(0, 19).replace("T", " ") : null,
-      venue ? String(venue).trim() : null,
-      address_line1 ? String(address_line1).trim() : null,
-      address_line2 ? String(address_line2).trim() : null,
+      safeVenue,
+      safeAddressLine1 ? safeAddressLine1.substring(0, 255) : null,
+      address_line2 ? String(address_line2).trim().substring(0, 255) : null,
       safeCity,
       safeState,
       safeZip,
-      location ? String(location).trim() : null, // location can be null
+      location ? String(location).trim() : null,
+      coords ? coords.lat : null,
+      coords ? coords.lng : null,
       tags ? String(tags).trim() : null,
       price,
       capacityValue,
@@ -278,6 +318,7 @@ router.get("/", async (req, res) => {
         e.category,
         e.created_by,
         e.capacity,
+        e.ticket_price,
         e.main_image,
         e.image_2,
         e.image_3,
@@ -513,10 +554,18 @@ router.put("/:id", authenticateToken, async (req, res) => {
       }
     }
 
-    // Prepare SQL update
     const safeState = state ? String(state).trim().substring(0, 49) : null;
     const safeCity = city ? String(city).trim().substring(0, 100) : null;
     const safeZip = zip_code ? String(zip_code).trim().substring(0, 10) : null;
+    const safeVenue = venue ? String(venue).trim().substring(0, 255) : null;
+    const safeAddressLine1 = address_line1 ? String(address_line1).trim().substring(0, 255) : null;
+
+    let coords = null;
+    try {
+      coords = await geocodeAddress(safeVenue, safeAddressLine1, safeCity, safeState, safeZip);
+    } catch (e) {
+      // non-fatal
+    }
 
     const sql = `
       UPDATE events SET
@@ -532,6 +581,8 @@ router.put("/:id", authenticateToken, async (req, res) => {
         state = ?,
         zip_code = ?,
         location = ?,
+        lat = ?,
+        lng = ?,
         tags = ?,
         ticket_price = ?,
         capacity = ?,
@@ -550,13 +601,15 @@ router.put("/:id", authenticateToken, async (req, res) => {
       String(category).trim().substring(0, 100),
       startDate.toISOString().slice(0, 19).replace("T", " "),
       endDate ? endDate.toISOString().slice(0, 19).replace("T", " ") : null,
-      venue ? String(venue).trim().substring(0, 255) : null,
-      address_line1 ? String(address_line1).trim().substring(0, 255) : null,
+      safeVenue,
+      safeAddressLine1,
       address_line2 ? String(address_line2).trim().substring(0, 255) : null,
       safeCity,
       safeState,
       safeZip,
       location ? String(location).trim() : null,
+      coords ? coords.lat : null,
+      coords ? coords.lng : null,
       tags ? String(tags).trim().substring(0, 500) : null,
       price,
       capacityValue,
@@ -626,7 +679,7 @@ router.delete("/:id", authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/events/categories - Get categories (from admin-managed table, fallback to distinct from events)
+// GET /api/events/categories - Get categories from database only (seed via SQL script if needed)
 router.get("/categories", async (req, res) => {
   try {
     let rows;

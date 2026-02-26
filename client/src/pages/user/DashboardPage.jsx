@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { getUserRole } from "../../utils/auth";
 import AppShell from "../../components/layout/AppShell";
 import EventCard from "../../components/events/EventCard";
-import { getEvents, getMyEvents } from "../../api";
+import { getEvents, getMyEvents, getCategories } from "../../api";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -50,8 +50,15 @@ function DashboardPage() {
   const role = getUserRole();
   const [events, setEvents] = useState([]);
   const [myEvents, setMyEvents] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [myEventsLoading, setMyEventsLoading] = useState(false);
+
+  useEffect(() => {
+    getCategories()
+      .then((list) => setCategories(Array.isArray(list) ? list : []))
+      .catch(() => setCategories([]));
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -112,14 +119,24 @@ function DashboardPage() {
                 Browse
               </h2>
               <div className="flex flex-wrap gap-3 mb-6">
-                {["Music", "Food", "Tech"].map((category) => (
-                  <button
-                    key={category}
+                {categories.length > 0 ? (
+                  categories.map((category) => (
+                    <Link
+                      key={category}
+                      to={`/events/browse?category=${encodeURIComponent(category)}`}
+                      className="px-4 py-2 bg-white border border-[#cad5e2] rounded-lg text-[#314158] hover:border-[#2e6b4e] hover:text-[#2e6b4e] transition-colors"
+                    >
+                      {category}
+                    </Link>
+                  ))
+                ) : (
+                  <Link
+                    to="/events/browse"
                     className="px-4 py-2 bg-white border border-[#cad5e2] rounded-lg text-[#314158] hover:border-[#2e6b4e] hover:text-[#2e6b4e] transition-colors"
                   >
-                    {category}
-                  </button>
-                ))}
+                    Browse events
+                  </Link>
+                )}
               </div>
             </section>
 

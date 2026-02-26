@@ -12,6 +12,9 @@ client/dist
 dist-ssr
 *.local
 
+# User uploads (stored locally; exclude from repo)
+server/uploads/
+
 # Logs
 logs
 *.log

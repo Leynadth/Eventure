@@ -1,15 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getHeroSettings, getContentSettings, getEvents, getCategories } from "../../api";
+import { getHeroSettings, getContentSettings, getEvents, getCategories, getImageUrl } from "../../api";
 import EventCard from "../../components/events/EventCard";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
-
-function getImageUrl(imagePath) {
-  if (!imagePath) return null;
-  if (imagePath.startsWith("http")) return imagePath;
-  return `${API_URL}${imagePath}`;
-}
 
 // Fallback category icons (for any category name)
 const DEFAULT_CATEGORY_ICON = "📅";
@@ -65,8 +57,6 @@ function buildFullAddress(event) {
 
 function HomePage() {
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedFilter, setSelectedFilter] = useState("");
   const [mostAttendedEvent, setMostAttendedEvent] = useState(null);
   const [loadingEvent, setLoadingEvent] = useState(true);
   const [hero, setHero] = useState({ type: "color", color: "#2e6b4e", image: null });
@@ -114,12 +104,12 @@ function HomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#f8fafc] font-[Arimo,sans-serif]">
       {/* Hero Section - from admin settings + editable content */}
       <section
         className="relative text-white overflow-hidden"
         style={{
-          minHeight: "400px",
+          minHeight: "420px",
           ...(hero.type === "image" && hero.image
             ? {
                 backgroundImage: `url(${getImageUrl(hero.image)})`,
@@ -130,122 +120,107 @@ function HomePage() {
             : { backgroundColor: hero.color || "#2e6b4e" }),
         }}
       >
-        <div className="absolute inset-0 bg-black/20"></div>
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 md:py-32">
-          <div className="text-center">
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-4">
+        <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-black/30" />
+        <div className="absolute inset-0 bg-[#1e3d32]/40" />
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-28 md:py-36">
+          <div className="text-center max-w-4xl mx-auto">
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-5 tracking-tight drop-shadow-sm">
               {content.home_hero_headline || "Discover Amazing Events Near You"}
             </h1>
-            <p className="text-lg md:text-xl text-white/90 max-w-2xl mx-auto">
+            <p className="text-lg md:text-xl text-white/95 max-w-2xl mx-auto leading-relaxed">
               {content.home_hero_subheadline || "Find and join exciting events happening in your area"}
             </p>
+            <Link
+              to="/browse"
+              className="inline-flex items-center gap-2 mt-8 px-8 py-4 bg-white text-[#2e6b4e] rounded-xl font-semibold text-base hover:bg-white/95 hover:shadow-lg transition-all shadow-md"
+            >
+              Browse events
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+            </Link>
           </div>
         </div>
       </section>
 
-      {/* Search Section */}
-      <section className="bg-white border-b border-[#e2e8f0] py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row gap-4 mb-4">
-            <div className="flex-1">
-              <input
-                type="text"
-                placeholder="Search events..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full h-12 px-4 rounded-lg border border-[#cad5e2] text-base placeholder:text-[rgba(10,10,10,0.5)] focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
-              />
-            </div>
-            <div className="w-full md:w-48">
-              <select
-                className="w-full h-12 px-4 rounded-lg border border-[#cad5e2] text-base bg-white focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent cursor-pointer"
-                aria-label="Category filter"
-                value={selectedFilter}
-                onChange={(e) => setSelectedFilter(e.target.value)}
-              >
-                <option value="">All Categories</option>
-                {categories.map((cat) => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-            </div>
-            <button
-              onClick={() => {
-                const params = new URLSearchParams();
-                if (searchQuery.trim()) params.set("search", searchQuery.trim());
-                const isCategory = categories.includes(selectedFilter);
-                if (selectedFilter && isCategory) params.set("category", selectedFilter);
-                else if (selectedFilter && ["Today", "This Week", "Free", "Nearby", "Popular"].includes(selectedFilter)) params.set("filter", selectedFilter);
-                navigate(`/browse${params.toString() ? `?${params.toString()}` : ""}`);
-              }}
-              className="px-6 py-3 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] transition-colors whitespace-nowrap"
+      {/* Explore — compact CTA strip */}
+      <section className="py-6 border-b border-[#e2e8f0] bg-white">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link
+              to="/browse"
+              className="w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#f8fafc] border border-[#e2e8f0] text-[#0f172b] font-semibold shadow-sm hover:border-[#2e6b4e]/50 hover:bg-[#2e6b4e]/5 transition-all text-sm font-semibold text-[#0f172b]"
             >
-              Search
-            </button>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[#2e6b4e] shrink-0"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              Browse events
+            </Link>
+            <Link
+              to="/events/new"
+              className="w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#2e6b4e] text-white font-semibold text-sm hover:bg-[#255a43] transition-all shadow-sm"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0"><path d="M12 5v14M5 12h14"/></svg>
+              Create an event
+            </Link>
           </div>
-
-          {/* Filter Chips */}
-          <div className="flex flex-wrap gap-2">
-            {["Today", "This Week", "Free", "Nearby", "Popular"].map((filter) => (
-              <button
-                key={filter}
-                onClick={() => setSelectedFilter(filter === selectedFilter ? "" : filter)}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                  selectedFilter === filter
-                    ? "bg-[#2e6b4e] text-white"
-                    : "bg-gray-100 text-[#314158] hover:bg-gray-200"
-                }`}
-              >
-                {filter}
-              </button>
-            ))}
-          </div>
+          <p className="text-center text-[#94a3b8] text-xs mt-4">Search and filter on the browse page when you’re ready.</p>
         </div>
       </section>
 
       {/* Our Story Section with Most Attended Event */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Story Section - editable via admin */}
-          <div className="bg-white rounded-2xl shadow-lg p-8 md:p-12">
-            <h2 className="text-3xl font-bold text-[#0f172b] mb-4">
-              {content.home_about_title || "How Eventure Was Started"}
-            </h2>
-            <div className="prose prose-lg max-w-none text-[#45556c]">
-              {content.home_about_body ? (
-                <div className="text-lg leading-relaxed whitespace-pre-line">{content.home_about_body}</div>
-              ) : (
-                <>
-                  <p className="text-lg leading-relaxed mb-4">
-                    Eventure began as a simple idea in a college dorm room. Three friends, frustrated by the difficulty of discovering local events and connecting with their community, decided to build something better.
-                  </p>
-                  <p className="text-lg leading-relaxed mb-4">
-                    What started as a weekend project quickly grew into a passion. We realized that finding events shouldn't be complicated—whether you're looking for a music festival, a tech meetup, a food tasting, or a networking event, everything should be in one place, easy to browse, and simple to join.
-                  </p>
-                  <p className="text-lg leading-relaxed mb-4">
-                    Today, Eventure has become a thriving platform where thousands of people discover amazing events every day. We've built a community that brings people together, helps organizers reach their audiences, and makes every day an opportunity to experience something new.
-                  </p>
-                  <p className="text-lg leading-relaxed">
-                    Our mission is simple: <strong className="text-[#2e6b4e]">to make event discovery effortless and community connection meaningful.</strong> Join us on this journey, and let's discover amazing events together.
-                  </p>
-                </>
-              )}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 lg:py-12">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-10">
+          {/* Story card: image on top, then title + text */}
+          <div className="bg-white rounded-2xl shadow-sm border border-[#e2e8f0] overflow-hidden">
+            {(content.home_founders_image && getImageUrl(content.home_founders_image)) ? (
+              <div className="aspect-[4/3] sm:aspect-[5/3] bg-[#f8fafc] flex items-center justify-center p-4">
+                <img
+                  src={getImageUrl(content.home_founders_image)}
+                  alt="Joel Mayorga and Leynadth Sosa Ortiz, who built Eventure"
+                  className="max-w-full max-h-full w-auto h-auto object-contain"
+                />
+              </div>
+            ) : null}
+            <div className="p-6 sm:p-8">
+              <h2 className="text-xl sm:text-2xl font-bold text-[#0f172b] mb-4">
+                {content.home_about_title || "How Eventure Started"}
+              </h2>
+              <div className="text-[#475569] leading-relaxed space-y-3 text-sm sm:text-base">
+                    {content.home_about_body ? (
+                      <div className="whitespace-pre-line">{content.home_about_body}</div>
+                    ) : (
+                      <>
+                        <p>
+                          Eventure was built by <strong className="text-[#0f172b]">Joel Mayorga</strong> and <strong className="text-[#0f172b]">Leynadth Sosa Ortiz</strong> as our senior project at New England Institute of Technology. We wanted a place where finding events—concerts, meetups, workshops, whatever—didn’t feel like a chore. So we made one.
+                        </p>
+                        <p>
+                          We’re both battling depression, but we’re still doing our best to succeed and build something that helps people connect. Eventure is about keeping it simple: browse, RSVP, and show up. No clutter, no hassle—just events that matter to you.
+                        </p>
+                        <p>
+                          Our goal is simple: <strong className="text-[#2e6b4e]">make event discovery easy and help people connect.</strong> Thanks for being here—we hope you find something great.
+                        </p>
+                      </>
+                    )}
+              </div>
+              <p className="mt-4 text-sm text-[#64748b] font-medium">Built with you in mind</p>
             </div>
           </div>
 
           {/* Most Attended Event Card */}
-          <div className="bg-white rounded-2xl shadow-lg p-8 md:p-12">
-            <h2 className="text-3xl font-bold text-[#0f172b] mb-6">
-              {content.home_most_attended_title || "Current Most Attended Event"}
-            </h2>
+          <div className="bg-white rounded-2xl shadow-sm border border-[#e2e8f0] p-8 md:p-10">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl md:text-3xl font-bold text-[#0f172b]">
+                {content.home_most_attended_title || "Current Most Attended Event"}
+              </h2>
+              <span className="px-3 py-1 rounded-full bg-[#2e6b4e]/10 text-[#2e6b4e] text-xs font-semibold uppercase tracking-wide">
+                Popular
+              </span>
+            </div>
             {loadingEvent ? (
-              <div className="text-center py-12">
-                <p className="text-[#45556c]">Loading event...</p>
+              <div className="text-center py-14 rounded-xl bg-[#f8fafc] border border-[#e2e8f0]">
+                <p className="text-[#64748b]">Loading event...</p>
               </div>
             ) : mostAttendedEvent ? (
               <Link
                 to={`/events/${mostAttendedEvent.id}`}
-                className="focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:rounded-2xl block"
+                className="block rounded-xl overflow-hidden border border-[#e2e8f0] hover:border-[#2e6b4e]/50 hover:shadow-md transition-all focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:ring-offset-2"
               >
                 <EventCard
                   title={mostAttendedEvent.title}
@@ -260,8 +235,9 @@ function HomePage() {
                 />
               </Link>
             ) : (
-              <div className="text-center py-12">
-                <p className="text-[#45556c]">No events available yet</p>
+              <div className="text-center py-14 rounded-xl bg-[#f8fafc] border border-[#e2e8f0]">
+                <p className="text-[#64748b]">No events available yet</p>
+                <Link to="/browse" className="inline-block mt-3 text-[#2e6b4e] font-medium hover:underline">Browse events</Link>
               </div>
             )}
           </div>
@@ -269,18 +245,19 @@ function HomePage() {
       </section>
 
       {/* Browse by Category */}
-      <section className="bg-white py-12">
+      <section className="py-10 lg:py-12 bg-white border-y border-[#e2e8f0]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl font-bold text-[#0f172b] mb-6">Browse by Category</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <h2 className="text-2xl font-bold text-[#0f172b] mb-2">Browse by Category</h2>
+          <p className="text-[#64748b] mb-6 max-w-xl">Find events that match what you love.</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             {categories.map((category) => (
               <button
                 key={category}
                 onClick={() => handleCategoryClick(category)}
-                className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm p-6 text-center hover:shadow-md hover:border-[#2e6b4e] transition-all group"
+                className="bg-[#f8fafc] border border-[#e2e8f0] rounded-2xl p-6 text-center hover:bg-[#2e6b4e]/5 hover:border-[#2e6b4e]/30 hover:shadow-sm transition-all group"
               >
-                <div className="text-4xl mb-2">{CATEGORY_ICONS[category] || "📅"}</div>
-                <p className="text-sm font-medium text-[#0f172b] group-hover:text-[#2e6b4e] transition-colors">
+                <span className="block text-3xl mb-3">{CATEGORY_ICONS[category] || "📅"}</span>
+                <p className="text-sm font-semibold text-[#0f172b] group-hover:text-[#2e6b4e] transition-colors">
                   {category}
                 </p>
               </button>
@@ -290,106 +267,28 @@ function HomePage() {
       </section>
 
       {/* Newsletter Subscribe */}
-      <section className="bg-[#2e6b4e] py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-2xl mx-auto text-center">
-            <h2 className="text-2xl font-bold text-white mb-2">
-              Stay Updated with New Events
-            </h2>
-            <p className="text-white/90 mb-6">
-              Subscribe to our newsletter and never miss an exciting event
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <input
-                type="email"
-                placeholder="Enter your email"
-                className="flex-1 h-12 px-4 rounded-lg border border-white/20 bg-white/10 text-white placeholder:text-white/70 focus:outline-none focus:ring-2 focus:ring-white focus:border-transparent"
-              />
-              <button className="px-6 py-3 bg-white text-[#2e6b4e] rounded-lg font-medium hover:bg-gray-100 transition-colors whitespace-nowrap">
-                Subscribe
-              </button>
-            </div>
+      <section className="relative py-16 overflow-hidden">
+        <div className="absolute inset-0 bg-[#2e6b4e]" />
+        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.06)_0%,transparent_50%)]" />
+        <div className="relative max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-2xl font-bold text-white mb-2">
+            Stay in the loop
+          </h2>
+          <p className="text-white/90 mb-6">
+            Get new events in your inbox. No spam—just what's happening near you.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
+            <input
+              type="email"
+              placeholder="Enter your email"
+              className="flex-1 h-12 px-4 rounded-xl border border-white/20 bg-white/10 text-white placeholder:text-white/70 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-white/30 transition-colors"
+            />
+            <button className="h-12 px-6 bg-white text-[#2e6b4e] rounded-xl font-semibold hover:bg-white/95 transition-colors whitespace-nowrap">
+              Subscribe
+            </button>
           </div>
         </div>
       </section>
-
-      {/* Footer */}
-      <footer className="bg-[#0f172b] text-white py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            <div>
-              <div className="flex items-center mb-4">
-                <img 
-                  src="/eventure-logo.png" 
-                  alt="Eventure" 
-                  className="h-12 w-auto"
-                />
-              </div>
-              <p className="text-sm text-gray-400">
-                Discover and join amazing events near you.
-              </p>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-4">Explore</h3>
-              <ul className="space-y-2 text-sm text-gray-400">
-                <li>
-                  <Link to="/browse" className="hover:text-white transition-colors">
-                    Browse Events
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/dashboard" className="hover:text-white transition-colors">
-                    Dashboard
-                  </Link>
-                </li>
-                <li>
-                  <Link to="#" className="hover:text-white transition-colors">
-                    Categories
-                  </Link>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-4">Account</h3>
-              <ul className="space-y-2 text-sm text-gray-400">
-                <li>
-                  <Link to="/login" className="hover:text-white transition-colors">
-                    Sign In
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/register" className="hover:text-white transition-colors">
-                    Sign Up
-                  </Link>
-                </li>
-                <li>
-                  <Link to="#" className="hover:text-white transition-colors">
-                    Help
-                  </Link>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-4">Legal</h3>
-              <ul className="space-y-2 text-sm text-gray-400">
-                <li>
-                  <Link to="#" className="hover:text-white transition-colors">
-                    Terms of Service
-                  </Link>
-                </li>
-                <li>
-                  <Link to="#" className="hover:text-white transition-colors">
-                    Privacy Policy
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          </div>
-          <div className="border-t border-gray-700 mt-8 pt-8 text-center text-sm text-gray-400">
-            <p>&copy; 2024 Eventure. All rights reserved.</p>
-          </div>
-        </div>
-      </footer>
 
     </div>
   );

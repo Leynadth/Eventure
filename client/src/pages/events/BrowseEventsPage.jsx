@@ -326,125 +326,144 @@ function BrowseEventsPage() {
     }
   };
 
+  const hasActiveFilters = selectedCategory !== "All" || zipCode || quickFilter;
+  const clearFilters = () => {
+    setSearchQuery("");
+    setSelectedCategory("All");
+    setZipCode("");
+    setQuickFilter("");
+    setSearchParams({}, { replace: true });
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* White Header Section */}
-      <div className="bg-white border-b border-[#e2e8f0]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <h1 className="text-3xl font-bold text-[#0f172b] mb-2">Browse Events</h1>
-          <p className="text-base text-[#45556c]">
-            Discover exciting events happening near you
+    <div className="min-h-screen bg-[#f8fafc]">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl sm:text-4xl font-bold text-[#0f172b] mb-2">Browse Events</h1>
+          <p className="text-[#64748b] text-lg">
+            Discover events near you — search, filter by category or location, and save your favorites.
           </p>
         </div>
-      </div>
 
-      {/* Search and Filters Section */}
-      <div className="bg-white border-b border-[#e2e8f0]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex flex-col sm:flex-row gap-4">
-            {/* Search Input */}
-            <div className="flex-1">
-              <input
-                type="text"
-                placeholder="Search events..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full h-12 px-4 rounded-lg border border-[#cad5e2] text-base placeholder:text-[rgba(10,10,10,0.5)] focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
-              />
-            </div>
-
-            {/* ZIP Code Input */}
-            <div className="w-full sm:w-48">
-              <input
-                type="text"
-                placeholder="ZIP code (e.g., 02910)"
-                value={zipCode}
-                onChange={handleZipChange}
-                maxLength={5}
-                className="w-full h-12 px-4 rounded-lg border border-[#cad5e2] text-base placeholder:text-[rgba(10,10,10,0.5)] focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
-              />
-            </div>
-
-            {/* Radius Dropdown (only show when valid ZIP is entered) */}
-            {isValidZip && (
-              <div className="w-full sm:w-32">
+        {/* Search and Filters Card */}
+        <div className="bg-white rounded-2xl shadow-sm border border-[#e2e8f0] p-6 mb-8">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row gap-4 flex-wrap">
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-xs font-medium text-[#64748b] mb-1.5">Search</label>
+                <input
+                  type="text"
+                  placeholder="Search by title, location, category..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full h-11 px-4 rounded-xl border border-[#e2e8f0] text-[#0f172b] placeholder:text-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent transition-shadow"
+                />
+              </div>
+              <div className="w-full sm:w-36">
+                <label className="block text-xs font-medium text-[#64748b] mb-1.5">Category</label>
                 <select
-                  value={radius}
-                  onChange={(e) => setRadius(Number.parseInt(e.target.value, 10))}
-                  className="w-full h-12 px-4 rounded-lg border border-[#cad5e2] text-base bg-white focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent cursor-pointer"
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="w-full h-11 px-4 rounded-xl border border-[#e2e8f0] text-[#0f172b] bg-white focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent cursor-pointer"
                 >
-                  {RADIUS_OPTIONS.map((r) => (
-                    <option key={r} value={r}>
-                      {r} miles
-                    </option>
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat}>{cat === "All" ? "All Categories" : cat}</option>
                   ))}
                 </select>
               </div>
-            )}
-
-            {/* Category Dropdown */}
-            <div className="w-full sm:w-48">
-              <select
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                className="w-full h-12 px-4 rounded-lg border border-[#cad5e2] text-base bg-white focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent cursor-pointer"
-              >
-                {categories.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat === "All" ? "All Categories" : cat}
-                  </option>
-                ))}
-              </select>
+              <div className="w-full sm:w-28">
+                <label className="block text-xs font-medium text-[#64748b] mb-1.5">ZIP code</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="02910"
+                  value={zipCode}
+                  onChange={handleZipChange}
+                  maxLength={5}
+                  className="w-full h-11 px-4 rounded-xl border border-[#e2e8f0] text-[#0f172b] placeholder:text-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
+                />
+              </div>
+              {isValidZip && (
+                <div className="w-full sm:w-28">
+                  <label className="block text-xs font-medium text-[#64748b] mb-1.5">Within</label>
+                  <select
+                    value={radius}
+                    onChange={(e) => setRadius(Number.parseInt(e.target.value, 10))}
+                    className="w-full h-11 px-4 rounded-xl border border-[#e2e8f0] text-[#0f172b] bg-white focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent cursor-pointer"
+                  >
+                    {RADIUS_OPTIONS.map((r) => (
+                      <option key={r} value={r}>{r} mi</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={() => setShowFiltersPanel((prev) => !prev)}
+                  className={`h-11 px-5 rounded-xl font-medium transition-colors whitespace-nowrap flex items-center gap-2 ${
+                    showFiltersPanel ? "bg-[#2e6b4e] text-white" : "bg-[#f1f5f9] text-[#475569] hover:bg-[#e2e8f0]"
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                  </svg>
+                  Filters {showFiltersPanel ? "▲" : "▼"}
+                </button>
+              </div>
             </div>
 
-            {/* Filters Button */}
-            <button
-              onClick={() => setShowFiltersPanel((prev) => !prev)}
-              className={`px-6 py-3 rounded-lg font-medium transition-colors whitespace-nowrap ${
-                showFiltersPanel
-                  ? "bg-[#2e6b4e] text-white border border-[#2e6b4e]"
-                  : "bg-white border border-[#cad5e2] text-[#314158] hover:bg-gray-50"
-              }`}
-            >
-              Filters {showFiltersPanel ? "▲" : "▼"}
-            </button>
-          </div>
+            {/* Quick filter pills - always visible */}
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#e2e8f0]">
+              <span className="text-xs font-medium text-[#64748b] mr-1">Quick:</span>
+              {["Today", "This Week", "Free", "Popular"].map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setQuickFilter(quickFilter === f ? "" : f)}
+                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                    quickFilter === f ? "bg-[#2e6b4e] text-white shadow-sm" : "bg-[#f1f5f9] text-[#475569] hover:bg-[#e2e8f0]"
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
 
-          {/* Expandable Filters Panel */}
-          {showFiltersPanel && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-[#e2e8f0]">
-              <p className="text-sm font-medium text-[#314158] mb-3">Filter by</p>
-              <div className="flex flex-wrap gap-4 mb-3">
+            {/* Expandable panel (same options, compact) */}
+            {showFiltersPanel && (
+              <div className="pt-4 mt-2 border-t border-[#e2e8f0] flex flex-wrap gap-4">
                 <div>
-                  <label className="block text-xs text-[#62748e] mb-1">Category</label>
+                  <label className="block text-xs text-[#64748b] mb-1">Category</label>
                   <select
                     value={selectedCategory}
                     onChange={(e) => setSelectedCategory(e.target.value)}
-                    className="h-10 px-3 rounded-lg border border-[#cad5e2] text-sm bg-white focus:ring-2 focus:ring-[#2e6b4e]"
+                    className="h-10 px-3 rounded-lg border border-[#e2e8f0] text-sm bg-white focus:ring-2 focus:ring-[#2e6b4e]"
                   >
                     {categories.map((cat) => (
-                      <option key={cat} value={cat}>{cat === "All" ? "All Categories" : cat}</option>
+                      <option key={cat} value={cat}>{cat === "All" ? "All" : cat}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-[#62748e] mb-1">ZIP Code</label>
+                  <label className="block text-xs text-[#64748b] mb-1">ZIP</label>
                   <input
                     type="text"
-                    placeholder="e.g. 02910"
+                    placeholder="02910"
                     value={zipCode}
                     onChange={handleZipChange}
                     maxLength={5}
-                    className="h-10 px-3 w-28 rounded-lg border border-[#cad5e2] text-sm focus:ring-2 focus:ring-[#2e6b4e]"
+                    className="h-10 px-3 w-24 rounded-lg border border-[#e2e8f0] text-sm focus:ring-2 focus:ring-[#2e6b4e]"
                   />
                 </div>
                 {isValidZip && (
                   <div>
-                    <label className="block text-xs text-[#62748e] mb-1">Within</label>
+                    <label className="block text-xs text-[#64748b] mb-1">Radius</label>
                     <select
                       value={radius}
                       onChange={(e) => setRadius(Number.parseInt(e.target.value, 10))}
-                      className="h-10 px-3 rounded-lg border border-[#cad5e2] text-sm bg-white focus:ring-2 focus:ring-[#2e6b4e]"
+                      className="h-10 px-3 rounded-lg border border-[#e2e8f0] text-sm bg-white focus:ring-2 focus:ring-[#2e6b4e]"
                     >
                       {RADIUS_OPTIONS.map((r) => (
                         <option key={r} value={r}>{r} miles</option>
@@ -453,86 +472,52 @@ function BrowseEventsPage() {
                   </div>
                 )}
               </div>
-              <div className="flex flex-wrap gap-2">
-                <span className="text-xs text-[#62748e] mr-2">Quick filters:</span>
-                {["Today", "This Week", "Free", "Popular"].map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setQuickFilter(quickFilter === f ? "" : f)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                      quickFilter === f ? "bg-[#2e6b4e] text-white" : "bg-white border border-[#cad5e2] text-[#314158] hover:bg-gray-50"
-                    }`}
-                  >
-                    {f}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Results Header with View Toggle */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="flex items-center justify-between mb-6">
-          <p className="text-sm text-[#45556c]">
-            {loading ? "Loading..." : `Showing ${filteredEvents.length} events`}
-          </p>
-
-          {/* View Toggle Buttons */}
+        {/* Results bar + view toggle */}
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <p className="text-[#475569] font-medium">
+              {loading ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-[#2e6b4e]/30 border-t-[#2e6b4e] rounded-full animate-spin" />
+                  Loading events...
+                </span>
+              ) : (
+                <span className="text-[#0f172b]">{filteredEvents.length}</span>
+              )}
+              {!loading && <span className="text-[#64748b]"> event{filteredEvents.length !== 1 ? "s" : ""}</span>}
+            </p>
+            {hasActiveFilters && !loading && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="text-sm text-[#2e6b4e] hover:underline font-medium"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-2">
+            <span className="text-xs text-[#64748b] mr-1">View:</span>
             <button
               onClick={() => setViewMode("grid")}
-              className={`p-2 rounded-lg transition-colors ${
-                viewMode === "grid"
-                  ? "bg-[#2e6b4e] text-white"
-                  : "bg-white border border-[#cad5e2] text-[#314158] hover:bg-gray-50"
-              }`}
+              className={`p-2.5 rounded-xl transition-colors ${viewMode === "grid" ? "bg-[#2e6b4e] text-white shadow-sm" : "bg-white border border-[#e2e8f0] text-[#64748b] hover:bg-[#f8fafc]"}`}
               aria-label="Grid view"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="3" width="7" height="7" />
-                <rect x="14" y="3" width="7" height="7" />
-                <rect x="14" y="14" width="7" height="7" />
-                <rect x="3" y="14" width="7" height="7" />
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
               </svg>
             </button>
             <button
               onClick={() => setViewMode("list")}
-              className={`p-2 rounded-lg transition-colors ${
-                viewMode === "list"
-                  ? "bg-[#2e6b4e] text-white"
-                  : "bg-white border border-[#cad5e2] text-[#314158] hover:bg-gray-50"
-              }`}
+              className={`p-2.5 rounded-xl transition-colors ${viewMode === "list" ? "bg-[#2e6b4e] text-white shadow-sm" : "bg-white border border-[#e2e8f0] text-[#64748b] hover:bg-[#f8fafc]"}`}
               aria-label="List view"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="8" y1="6" x2="21" y2="6" />
-                <line x1="8" y1="12" x2="21" y2="12" />
-                <line x1="8" y1="18" x2="21" y2="18" />
-                <line x1="3" y1="6" x2="3.01" y2="6" />
-                <line x1="3" y1="12" x2="3.01" y2="12" />
-                <line x1="3" y1="18" x2="3.01" y2="18" />
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
               </svg>
             </button>
           </div>
@@ -540,22 +525,34 @@ function BrowseEventsPage() {
 
         {/* Events Grid/List */}
         {loading ? (
-          <div className="text-center py-12">
-            <p className="text-[#45556c]">Loading events...</p>
+          <div className="flex justify-center py-16">
+            <div className="text-center">
+              <div className="w-12 h-12 border-4 border-[#2e6b4e]/20 border-t-[#2e6b4e] rounded-full animate-spin mx-auto mb-4" />
+              <p className="text-[#64748b] font-medium">Loading events...</p>
+            </div>
           </div>
         ) : error ? (
-          <div className="text-center py-12">
-            <p className="text-red-600">{error}</p>
+          <div className="bg-white rounded-2xl border border-red-200 shadow-sm p-8 text-center max-w-xl mx-auto">
+            <p className="text-red-600 font-medium mb-2">Something went wrong</p>
+            <p className="text-[#64748b] text-sm">{error}</p>
+            <button type="button" onClick={() => window.location.reload()} className="mt-4 px-4 py-2 rounded-xl bg-[#2e6b4e] text-white font-medium hover:bg-[#255a43]">Try again</button>
           </div>
         ) : filteredEvents.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-[#45556c]">
-              {searchQuery.trim()
-                ? `No events match "${searchQuery}"`
-                : quickFilter
-                ? `No ${quickFilter.toLowerCase()} events found`
-                : "No events available yet"}
+          <div className="bg-white rounded-2xl shadow-sm border border-[#e2e8f0] p-12 text-center max-w-md mx-auto">
+            <div className="w-16 h-16 rounded-full bg-[#f1f5f9] flex items-center justify-center mx-auto mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-[#0f172b] mb-2">No events found</h2>
+            <p className="text-[#64748b] text-sm mb-4">
+              {searchQuery.trim() ? `No events match "${searchQuery}"` : quickFilter ? `No ${quickFilter.toLowerCase()} events right now.` : "Try adjusting your filters or search."}
             </p>
+            {hasActiveFilters && (
+              <button type="button" onClick={clearFilters} className="px-5 py-2.5 rounded-xl bg-[#2e6b4e] text-white font-medium hover:bg-[#255a43] transition-colors">
+                Clear filters
+              </button>
+            )}
           </div>
         ) : viewMode === "grid" ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -576,7 +573,7 @@ function BrowseEventsPage() {
                       date={formatEventDate(event.starts_at)}
                       location={buildFullAddress(event)}
                       category={event.category}
-                      price={null}
+                      price={event.ticket_price != null ? Number(event.ticket_price) : null}
                       imageUrl={getImageUrl(event.main_image)}
                       isFavorited={favoritesMap[parseInt(event.id, 10)] || false}
                       isRsvped={rsvpMap[parseInt(event.id, 10)] || false}
@@ -592,7 +589,7 @@ function BrowseEventsPage() {
                     date={formatEventDate(event.starts_at)}
                     location={buildFullAddress(event)}
                     category={event.category}
-                    price={null}
+                    price={event.ticket_price != null ? Number(event.ticket_price) : null}
                     imageUrl={getImageUrl(event.main_image)}
                     isFavorited={false}
                     isRsvped={false}
@@ -623,7 +620,7 @@ function BrowseEventsPage() {
                       date={formatEventDate(event.starts_at)}
                       location={buildFullAddress(event)}
                       category={event.category}
-                      price={null}
+                      price={event.ticket_price != null ? Number(event.ticket_price) : null}
                       imageUrl={getImageUrl(event.main_image)}
                       viewMode="list"
                       isFavorited={favoritesMap[parseInt(event.id, 10)] || false}
@@ -640,7 +637,7 @@ function BrowseEventsPage() {
                     date={formatEventDate(event.starts_at)}
                     location={buildFullAddress(event)}
                     category={event.category}
-                    price={null}
+                    price={event.ticket_price != null ? Number(event.ticket_price) : null}
                     imageUrl={getImageUrl(event.main_image)}
                     viewMode="list"
                     isFavorited={false}

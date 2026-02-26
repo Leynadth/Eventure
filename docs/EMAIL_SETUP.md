@@ -92,9 +92,13 @@ Use your provider’s SMTP host, port, username, and password. Set `SMTP_HOST`, 
 
 ## Verify
 
-After redeploying, check Render logs on startup. You should see either:
+**1. Check the /health endpoint (live server)**  
+Open `https://your-api-url/health` in a browser or curl. You should see:
+- `"email": "SMTP"` and `"emailReady": true` — emails will be sent.
+- `"email": "DEV_FALLBACK"` or `"emailReady": false` — SMTP is not working; set or fix env vars and redeploy.
 
+**2. Check Render (or host) logs on startup.** You should see either:
 - `✅ SMTP verified` — real email is enabled, or  
-- `⚠️ SMTP not configured...` — env vars are missing or wrong; double-check and redeploy.
+- `⚠️ SMTP not configured...` or `📧 Production: SMTP env vars missing` — env vars are missing or wrong; double-check and redeploy.
 
-Then trigger "Forgot password" on your site; the user should receive the reset code by email (and it will no longer appear only in the logs).
+**3. Trigger "Forgot password"** on your site; the user should receive the reset code by email (and it will no longer appear only in the logs). If you see `⚠️ OTP email NOT sent to ... (SMTP not configured or verify failed)` in the logs, env vars are missing or Brevo verify failed.

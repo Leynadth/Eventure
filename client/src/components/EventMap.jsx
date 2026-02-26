@@ -40,34 +40,42 @@ function EventMap({ address, venue, city, state, zipCode, lat, lng }) {
           return;
         }
 
-        // Build address string - try multiple formats for better geocoding
-        // Clean up address components
-        const cleanAddress = address ? address.replace(/,/g, "").trim() : "";
+        const rawAddress = address ? address.trim() : "";
         const cleanCity = city ? city.trim() : "";
         const cleanState = state ? state.trim() : "";
         const cleanZip = zipCode ? zipCode.trim() : "";
+        const cleanVenue = venue ? venue.trim() : "";
+        const hasStreetOrVenue = rawAddress.length > 0 || cleanVenue.length > 0;
 
-        // Try different address formats
+        // Try formats that give the most accurate pin first (avoid "city, state zip" when we have a real address)
         const addressFormats = [];
 
-        // Format 1: Simple street address, city, state zip (most reliable)
-        if (cleanAddress && cleanCity && cleanState && cleanZip) {
-          addressFormats.push(`${cleanAddress}, ${cleanCity}, ${cleanState} ${cleanZip}`);
+        // 1) Full address as stored (best when user picked a place and got a long formatted string)
+        if (rawAddress.length > 10) {
+          const truncated = rawAddress.length > 280 ? rawAddress.substring(0, 280) : rawAddress;
+          addressFormats.push(truncated);
         }
 
-        // Format 2: Without venue, just address components
-        if (cleanAddress && cleanCity && cleanState) {
-          addressFormats.push(`${cleanAddress}, ${cleanCity}, ${cleanState}`);
+        // 2) Venue + address + city, state zip (concise one-line for geocoder)
+        if (cleanVenue && rawAddress && cleanCity && cleanState && cleanZip) {
+          const line = `${cleanVenue}, ${rawAddress.replace(/,+/g, ", ").trim()}, ${cleanCity}, ${cleanState} ${cleanZip}`;
+          if (line.length <= 280 && !addressFormats.includes(line)) addressFormats.push(line);
         }
 
-        // Format 3: Include venue if available
-        if (venue && cleanAddress && cleanCity && cleanState && cleanZip) {
-          const cleanVenue = venue.replace(/,/g, "").trim();
-          addressFormats.push(`${cleanVenue}, ${cleanAddress}, ${cleanCity}, ${cleanState} ${cleanZip}`);
+        // 3) Street + city, state zip (no venue)
+        if (rawAddress && cleanCity && cleanState && cleanZip) {
+          const line = `${rawAddress.replace(/,+/g, ", ").trim()}, ${cleanCity}, ${cleanState} ${cleanZip}`;
+          if (line.length <= 280 && !addressFormats.includes(line)) addressFormats.push(line);
         }
 
-        // Format 4: Just city, state zip
-        if (cleanCity && cleanState && cleanZip) {
+        // 4) Venue + city, state zip (when address is missing but venue is set)
+        if (cleanVenue && cleanCity && cleanState && cleanZip) {
+          const line = `${cleanVenue}, ${cleanCity}, ${cleanState} ${cleanZip}`;
+          if (!addressFormats.includes(line)) addressFormats.push(line);
+        }
+
+        // 5) City, state zip only – use only when we have no street/venue to avoid pinning to city center
+        if ((!hasStreetOrVenue || addressFormats.length === 0) && cleanCity && cleanState && cleanZip) {
           addressFormats.push(`${cleanCity}, ${cleanState} ${cleanZip}`);
         }
 

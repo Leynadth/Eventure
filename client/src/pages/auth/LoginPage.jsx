@@ -13,10 +13,18 @@ function LoginPage() {
   const resetSuccess = location.state?.resetSuccess === true;
   const returnTo = location.state?.returnTo || "/dashboard";
 
-  // Redirect if already logged in
+  // Redirect if already logged in (admins go to admin panel)
   useEffect(() => {
     const token = localStorage.getItem("eventure_token");
     if (token) {
+      try {
+        const stored = localStorage.getItem("eventure_user");
+        const user = stored ? JSON.parse(stored) : null;
+        if (user?.role === "admin") {
+          navigate("/admin", { replace: true });
+          return;
+        }
+      } catch (_) {}
       navigate(returnTo, { replace: true });
     }
   }, [navigate, returnTo]);
@@ -37,8 +45,12 @@ function LoginPage() {
         localStorage.setItem("eventure_user", JSON.stringify(data.user));
       }
       
-      // Navigate to returnTo path or dashboard
-      navigate(returnTo, { replace: true });
+      // Admins go straight to admin panel; others go to returnTo or dashboard
+      if (data.user?.role === "admin") {
+        navigate("/admin", { replace: true });
+      } else {
+        navigate(returnTo, { replace: true });
+      }
     } catch (err) {
       // Show user-friendly error message
       const errorMessage = err.message || "Login failed. Please check your credentials and try again.";
@@ -135,32 +147,6 @@ function LoginPage() {
             {loading ? "Logging in..." : "Login"}
           </button>
         </form>
-
-        <div className="flex flex-col gap-6">
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-[#e2e8f0]"></div>
-            </div>
-            <div className="relative flex justify-center text-base">
-              <span className="bg-white px-2 text-[#62748e]">or continue with</span>
-            </div>
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              type="button"
-              className="flex-1 h-12 border border-[#cad5e2] rounded-lg text-base text-[#314158] font-medium hover:bg-gray-50 transition-colors"
-            >
-              Google
-            </button>
-            <button
-              type="button"
-              className="flex-1 h-12 border border-[#cad5e2] rounded-lg text-base text-[#314158] font-medium hover:bg-gray-50 transition-colors"
-            >
-              Facebook
-            </button>
-          </div>
-        </div>
 
         <p className="text-base text-[#62748e] text-center">
           Don't have an account?{" "}

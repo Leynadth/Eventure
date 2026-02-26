@@ -1,6 +1,25 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const baseUrl = `${API_URL}/api`;
 
+/** Base URL for loading uploaded images (API origin). Uses window.location.origin when VITE_API_URL is unset so same-origin deploys work. */
+export function getImageBase() {
+  if (typeof import.meta.env.VITE_API_URL === "string" && import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL.replace(/\/$/, "");
+  }
+  if (typeof window !== "undefined" && window.location?.origin) return window.location.origin;
+  return "http://localhost:5000";
+}
+
+/** Turn a stored image path (relative or absolute) into a full URL for img src or backgroundImage. */
+export function getImageUrl(path) {
+  if (!path || typeof path !== "string") return null;
+  const trimmed = path.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
+  const base = getImageBase();
+  return `${base}${trimmed.startsWith("/") ? trimmed : "/" + trimmed}`;
+}
+
 // Get authentication token from localStorage
 function getAuthToken() {
   return localStorage.getItem("eventure_token");
@@ -884,6 +903,28 @@ export async function uploadHeroImage(imageFile) {
   }
 }
 
+export async function uploadFoundersImage(imageFile) {
+  try {
+    const formData = new FormData();
+    formData.append("image", imageFile);
+    const token = getAuthToken();
+    const headers = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const response = await fetch(`${baseUrl}/upload/founders-image`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: formData,
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
 // Content settings (editable text blocks) - public read
 export async function getContentSettings() {
   const response = await fetch(`${baseUrl}/admin/settings/content`, { method: "GET", credentials: "include" });
@@ -925,6 +966,15 @@ export async function updateAdminCategory(id, name) {
 
 export async function deleteAdminCategory(id) {
   const response = await fetch(`${baseUrl}/admin/categories/${id}`, { ...getFetchOptions(), method: "DELETE" });
+  return handleResponse(response);
+}
+
+/** POST /api/admin/events/backfill-coordinates - Backfill lat/lng for events missing coordinates (admin only) */
+export async function backfillEventCoordinates() {
+  const response = await fetch(`${baseUrl}/admin/events/backfill-coordinates`, {
+    ...getFetchOptions(),
+    method: "POST",
+  });
   return handleResponse(response);
 }
 

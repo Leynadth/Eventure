@@ -172,7 +172,7 @@ function EventCard({
 
             <div className="flex items-center justify-between mt-auto">
               <div className="text-lg font-semibold text-[#0f172b]">
-                {isFree ? "Free" : `$${price}`}
+                {isFree ? "Free" : `$${Number(price).toFixed(2)}`}
               </div>
               <button
                 onClick={handleRSVPClick}
@@ -308,7 +308,7 @@ function EventCard({
 
         <div className="flex items-center justify-between mt-auto pt-2">
           <div className="text-base font-semibold text-[#0f172b]">
-            {isFree ? "Free" : `$${price}`}
+            {isFree ? "Free" : `$${Number(price).toFixed(2)}`}
           </div>
           <button
             onClick={handleRSVPClick}

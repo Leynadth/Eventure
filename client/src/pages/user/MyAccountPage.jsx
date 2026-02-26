@@ -330,18 +330,6 @@ function MyAccountPage() {
             >
               Settings
             </button>
-            {role === "admin" && (
-              <button
-                onClick={() => setActiveTab("admin")}
-                className={`pb-4 px-1 font-medium transition-colors ${
-                  activeTab === "admin"
-                    ? "text-[#2e6b4e] border-b-2 border-[#2e6b4e]"
-                    : "text-[#45556c] hover:text-[#0f172b]"
-                }`}
-              >
-                Admin Control Panel
-              </button>
-            )}
           </div>
 
           {/* Tab Content */}
@@ -486,13 +474,6 @@ function MyAccountPage() {
                   Delete Account
                 </button>
               </div>
-            </div>
-          )}
-
-          {activeTab === "admin" && role === "admin" && (
-            <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm p-6">
-              <h3 className="text-lg font-semibold text-[#0f172b] mb-4">Admin Control Panel</h3>
-              <p className="text-[#45556c]">Admin features coming soon...</p>
             </div>
           )}
         </div>

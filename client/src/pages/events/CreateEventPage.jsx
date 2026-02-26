@@ -29,6 +29,7 @@ function CreateEventPage() {
   });
   const [mainImageIndex, setMainImageIndex] = useState(null);
   const [categories, setCategories] = useState([]);
+  const [isFreeEvent, setIsFreeEvent] = useState(true);
   const [formData, setFormData] = useState({
     title: "",
     category: "",
@@ -96,6 +97,7 @@ function CreateEventPage() {
           ticket_price: event.ticket_price?.toString() || "0",
           capacity: event.capacity?.toString() || "",
         });
+        setIsFreeEvent(event.ticket_price == null || Number(event.ticket_price) === 0);
 
         // Set address as valid since it's from database
         setIsAddressValid(!!event.address_line1);
@@ -355,7 +357,7 @@ function CreateEventPage() {
         state: stateValue,
         zip_code: zipValue,
         location: null,
-        ticket_price: parseFloat(formData.ticket_price) || 0,
+        ticket_price: isFreeEvent ? 0 : (parseFloat(formData.ticket_price) || 0),
         capacity: parseInt(formData.capacity, 10),
         main_image: mainImageUrl,
         image_2: image2Url,
@@ -777,9 +779,9 @@ function CreateEventPage() {
               </h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Ticket Price */}
+                {/* Ticket Price / Free toggle */}
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="ticket_price" className="text-sm font-medium text-[#314158] flex items-center gap-2">
+                  <label className="text-sm font-medium text-[#314158] flex items-center gap-2">
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       width="16"
@@ -794,22 +796,43 @@ function CreateEventPage() {
                       <line x1="12" y1="1" x2="12" y2="23" />
                       <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
                     </svg>
-                    Ticket Price *
+                    Ticket Price
                   </label>
-                  <input
-                    type="number"
-                    id="ticket_price"
-                    name="ticket_price"
-                    value={formData.ticket_price}
-                    onChange={handleChange}
-                    required
-                    min="0"
-                    step="0.01"
-                    className={inputBase}
-                  />
-                  <p className="text-xs text-[#62748e]">
-                    Enter 0 for free events
-                  </p>
+                  <div className="flex items-center gap-3 mb-2">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isFreeEvent}
+                        onChange={(e) => {
+                          const free = e.target.checked;
+                          setIsFreeEvent(free);
+                          if (free) setFormData((prev) => ({ ...prev, ticket_price: "0" }));
+                        }}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[#2e6b4e]/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2e6b4e]" />
+                      <span className="ml-3 text-sm font-medium text-[#314158]">Free event</span>
+                    </label>
+                  </div>
+                  {!isFreeEvent && (
+                    <>
+                      <input
+                        type="number"
+                        id="ticket_price"
+                        name="ticket_price"
+                        value={formData.ticket_price}
+                        onChange={handleChange}
+                        required={!isFreeEvent}
+                        min="0"
+                        step="0.01"
+                        className={inputBase}
+                      />
+                      <p className="text-xs text-[#62748e]">Price in dollars</p>
+                    </>
+                  )}
+                  {isFreeEvent && (
+                    <p className="text-sm text-[#2e6b4e] font-medium">This event will be listed as free.</p>
+                  )}
                 </div>
 
                 {/* Capacity */}

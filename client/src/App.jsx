@@ -22,6 +22,7 @@ import AdminDashboardPage from './pages/admin/AdminDashboardPage'
 // Components
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminProtectedRoute from './components/AdminProtectedRoute'
+import ErrorBoundary from './components/ErrorBoundary'
 
 function App() {
   return (
@@ -30,7 +31,7 @@ function App() {
         {/* Public routes */}
         <Route path="/" element={<HomePage />} />
         <Route path="/browse" element={<BrowseEventsPage />} />
-        <Route path="/events/:id" element={<EventDetailsPage />} />
+        <Route path="/events/:id" element={<ErrorBoundary><EventDetailsPage /></ErrorBoundary>} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />

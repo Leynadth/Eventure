@@ -4,6 +4,11 @@ const nodemailer = require("nodemailer");
 let transporter = null;
 let mailerMode = "DEV_FALLBACK"; // "SMTP" or "DEV_FALLBACK"
 
+// Whether required SMTP env vars are set (safe - no secrets)
+function isSmtpConfigured() {
+  return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+}
+
 // Log SMTP config status (safe - no secrets)
 function logSmtpConfig() {
   const hasHost = !!process.env.SMTP_HOST;
@@ -12,7 +17,6 @@ function logSmtpConfig() {
   const hasPass = !!process.env.SMTP_PASS;
   const hasFrom = !!process.env.SMTP_FROM;
 
-  // SMTP configuration check (logged only in development)
   if (process.env.NODE_ENV !== "production") {
     console.log("\n📧 SMTP Configuration:");
     console.log(`   SMTP_HOST present: ${hasHost}`);
@@ -20,6 +24,8 @@ function logSmtpConfig() {
     console.log(`   SMTP_USER present: ${hasUser}`);
     console.log(`   SMTP_PASS present: ${hasPass}`);
     console.log(`   SMTP_FROM present: ${hasFrom}`);
+  } else if (!isSmtpConfigured()) {
+    console.warn("📧 Production: SMTP env vars missing (SMTP_HOST, SMTP_USER, SMTP_PASS). OTP emails will not be sent.");
   }
 }
 
@@ -98,13 +104,16 @@ async function sendMail({ to, subject, text, html }) {
   const SMTP_FROM = process.env.SMTP_FROM || "Eventure <no-reply@eventure.com>";
 
   if (mailerMode === "DEV_FALLBACK" || !transporter) {
-    // DEV fallback: log to console
-    console.log("\n📧 [DEV FALLBACK] Email would be sent:");
-    console.log(`   To: ${to}`);
-    console.log(`   Subject: ${subject}`);
-    console.log(`   Text: ${text}`);
-    if (html) console.log(`   HTML: ${html}`);
-    console.log("");
+    if (process.env.NODE_ENV === "production") {
+      console.warn(`⚠️ OTP email NOT sent to ${to} (SMTP not configured or verify failed). Set SMTP_HOST, SMTP_USER, SMTP_PASS on the server.`);
+    } else {
+      console.log("\n📧 [DEV FALLBACK] Email would be sent:");
+      console.log(`   To: ${to}`);
+      console.log(`   Subject: ${subject}`);
+      console.log(`   Text: ${text}`);
+      if (html) console.log(`   HTML: ${html}`);
+      console.log("");
+    }
     return { ok: true, mode: "fallback" };
   }
 
@@ -152,4 +161,5 @@ module.exports = {
   sendMail,
   verifyTransport,
   getMode,
+  isSmtpConfigured,
 };

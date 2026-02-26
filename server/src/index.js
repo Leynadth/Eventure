@@ -16,7 +16,7 @@ const uploadRoutes = require("./routes/uploadRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const followRoutes = require("./routes/followRoutes");
 const devRoutes = require("./routes/devRoutes");
-const { verifyTransport, sendMail } = require("./utils/mailer");
+const { verifyTransport, getMode, isSmtpConfigured } = require("./utils/mailer");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -79,7 +79,13 @@ app.use("/uploads/profiles", express.static(path.join(__dirname, "../uploads/pro
 app.get("/health", async (req, res) => {
   try {
     await pool.execute("SELECT 1");
-    res.status(200).json({ ok: true });
+    const emailMode = getMode();
+    res.status(200).json({
+      ok: true,
+      email: emailMode,
+      smtpConfigured: isSmtpConfigured(),
+      emailReady: emailMode === "SMTP",
+    });
   } catch (err) {
     res.status(503).json({ ok: false, error: "Database unreachable" });
   }

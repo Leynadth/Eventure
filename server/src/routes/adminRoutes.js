@@ -42,11 +42,12 @@ const CONTENT_KEYS = [
   "content_home_about_title",
   "content_home_about_body",
   "content_home_most_attended_title",
+  "content_home_founders_image",
 ];
 router.get("/settings/content", async (req, res) => {
   try {
     const [rows] = await pool.execute(
-      "SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN (?, ?, ?, ?, ?)",
+      "SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN (?, ?, ?, ?, ?, ?)",
       CONTENT_KEYS
     ).catch(() => [[]]);
     const out = {
@@ -55,6 +56,7 @@ router.get("/settings/content", async (req, res) => {
       home_about_title: "",
       home_about_body: "",
       home_most_attended_title: "",
+      home_founders_image: "",
     };
     (rows || []).forEach((r) => {
       const key = r.setting_key;
@@ -64,6 +66,7 @@ router.get("/settings/content", async (req, res) => {
       else if (key === "content_home_about_title") out.home_about_title = val;
       else if (key === "content_home_about_body") out.home_about_body = val;
       else if (key === "content_home_most_attended_title") out.home_most_attended_title = val;
+      else if (key === "content_home_founders_image") out.home_founders_image = val;
     });
     return res.status(200).json(out);
   } catch (e) {
@@ -73,6 +76,7 @@ router.get("/settings/content", async (req, res) => {
       home_about_title: "",
       home_about_body: "",
       home_most_attended_title: "",
+      home_founders_image: "",
     });
   }
 });
@@ -91,6 +95,36 @@ router.get("/stats", async (req, res) => {
     // Get total events count
     const [eventRows] = await pool.execute("SELECT COUNT(*) as count FROM events");
     const totalEvents = Number(eventRows[0]?.count) || 0;
+
+    // Users this month (for % vs last month)
+    const [usersThisMonthRows] = await pool.execute(`
+      SELECT COUNT(*) as count FROM users
+      WHERE created_at >= date_trunc('month', CURRENT_DATE)
+    `);
+    const usersThisMonth = Number(usersThisMonthRows[0]?.count) || 0;
+
+    // Users last month
+    const [usersLastMonthRows] = await pool.execute(`
+      SELECT COUNT(*) as count FROM users
+      WHERE created_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month'
+        AND created_at < date_trunc('month', CURRENT_DATE)
+    `);
+    const usersLastMonth = Number(usersLastMonthRows[0]?.count) || 0;
+
+    // Events this month
+    const [eventsThisMonthRows] = await pool.execute(`
+      SELECT COUNT(*) as count FROM events
+      WHERE created_at >= date_trunc('month', CURRENT_DATE)
+    `);
+    const eventsThisMonth = Number(eventsThisMonthRows[0]?.count) || 0;
+
+    // Events last month
+    const [eventsLastMonthRows] = await pool.execute(`
+      SELECT COUNT(*) as count FROM events
+      WHERE created_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month'
+        AND created_at < date_trunc('month', CURRENT_DATE)
+    `);
+    const eventsLastMonth = Number(eventsLastMonthRows[0]?.count) || 0;
 
     // Get pending approvals count
     const [pendingRows] = await pool.execute(
@@ -116,6 +150,10 @@ router.get("/stats", async (req, res) => {
       totalEvents,
       pendingApprovals,
       popularCategory,
+      usersThisMonth,
+      usersLastMonth,
+      eventsThisMonth,
+      eventsLastMonth,
     });
   } catch (error) {
     console.error("Failed to fetch admin stats:", error);
@@ -457,41 +495,67 @@ router.delete("/users/:userId/unattend/:eventId", async (req, res) => {
   }
 });
 
-// GET /api/admin/analytics - Get analytics data
+// GET /api/admin/analytics - Get analytics data (this-month focus; 12-month trend includes current month)
 router.get("/analytics", async (req, res) => {
   try {
-    // Get events created over time (last 12 months, grouped by month) - Postgres
-    const [eventsOverTime] = await pool.execute(`
+    // Current month window (resets each month)
+    const [thisMonthUsers] = await pool.execute(`
+      SELECT COUNT(*)::int as count FROM users
+      WHERE created_at >= date_trunc('month', CURRENT_DATE)
+    `);
+    const [thisMonthEvents] = await pool.execute(`
+      SELECT COUNT(*)::int as count FROM events
+      WHERE created_at >= date_trunc('month', CURRENT_DATE)
+    `);
+    const [thisMonthRsvps] = await pool.execute(`
+      SELECT COUNT(*)::int as count FROM rsvps
+      WHERE created_at >= date_trunc('month', CURRENT_DATE) AND status = 'going'
+    `);
+    const currentMonthLabel = new Date().toLocaleString("en-US", { month: "long", year: "numeric" });
+
+    // Last 12 months including current month (so chart always ends on current month)
+    const [eventsOverTimeRaw] = await pool.execute(`
       SELECT 
         to_char(created_at, 'YYYY-MM') as month,
         COUNT(*)::int as count
       FROM events
-      WHERE created_at >= (NOW() - INTERVAL '12 months')
+      WHERE created_at >= (date_trunc('month', CURRENT_DATE) - INTERVAL '11 months')
       GROUP BY to_char(created_at, 'YYYY-MM')
       ORDER BY month ASC
     `);
-
-    // Get users registered over time (last 12 months, grouped by month)
-    const [usersOverTime] = await pool.execute(`
+    const [usersOverTimeRaw] = await pool.execute(`
       SELECT 
         to_char(created_at, 'YYYY-MM') as month,
         COUNT(*)::int as count
       FROM users
-      WHERE created_at >= (NOW() - INTERVAL '12 months')
+      WHERE created_at >= (date_trunc('month', CURRENT_DATE) - INTERVAL '11 months')
       GROUP BY to_char(created_at, 'YYYY-MM')
       ORDER BY month ASC
     `);
-
-    // Get RSVPs over time (last 12 months, grouped by month)
-    const [rsvpsOverTime] = await pool.execute(`
+    const [rsvpsOverTimeRaw] = await pool.execute(`
       SELECT 
         to_char(created_at, 'YYYY-MM') as month,
         COUNT(*)::int as count
       FROM rsvps
-      WHERE created_at >= (NOW() - INTERVAL '12 months') AND status = 'going'
+      WHERE created_at >= (date_trunc('month', CURRENT_DATE) - INTERVAL '11 months') AND status = 'going'
       GROUP BY to_char(created_at, 'YYYY-MM')
       ORDER BY month ASC
     `);
+
+    // Build last 12 months ending with current month (fill missing months with 0)
+    const monthKeys = [];
+    const d = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
+      monthKeys.push(m.getFullYear() + "-" + String(m.getMonth() + 1).padStart(2, "0"));
+    }
+    const fillSeries = (rows) => {
+      const map = (rows || []).reduce((acc, r) => { acc[r.month] = Number(r.count) || 0; return acc; }, {});
+      return monthKeys.map((month) => ({ month, count: map[month] ?? 0 }));
+    };
+    const eventsOverTime = fillSeries(eventsOverTimeRaw);
+    const usersOverTime = fillSeries(usersOverTimeRaw);
+    const rsvpsOverTime = fillSeries(rsvpsOverTimeRaw);
 
     // Get events by category
     const [eventsByCategory] = await pool.execute(`
@@ -524,6 +588,12 @@ router.get("/analytics", async (req, res) => {
     `);
 
     return res.status(200).json({
+      currentMonthLabel,
+      thisMonth: {
+        users: Number(thisMonthUsers[0]?.count) || 0,
+        events: Number(thisMonthEvents[0]?.count) || 0,
+        rsvps: Number(thisMonthRsvps[0]?.count) || 0,
+      },
       eventsOverTime: eventsOverTime || [],
       usersOverTime: usersOverTime || [],
       rsvpsOverTime: rsvpsOverTime || [],
@@ -549,13 +619,14 @@ router.get("/analytics", async (req, res) => {
 // PUT /api/admin/settings/content - Update editable text blocks
 router.put("/settings/content", async (req, res) => {
   try {
-    const { home_hero_headline, home_hero_subheadline, home_about_title, home_about_body, home_most_attended_title } = req.body;
+    const { home_hero_headline, home_hero_subheadline, home_about_title, home_about_body, home_most_attended_title, home_founders_image } = req.body;
     const updates = [
       ["content_home_hero_headline", home_hero_headline],
       ["content_home_hero_subheadline", home_hero_subheadline],
       ["content_home_about_title", home_about_title],
       ["content_home_about_body", home_about_body],
       ["content_home_most_attended_title", home_most_attended_title],
+      ["content_home_founders_image", home_founders_image],
     ];
     for (const [key, value] of updates) {
       const val = value != null ? String(value).substring(0, 10000) : "";
@@ -626,10 +697,81 @@ router.delete("/categories/:id", async (req, res) => {
   }
 });
 
-// PUT /api/admin/settings/hero - Update hero background settings
-router.put("/settings/hero", async (req, res) => {
+// POST /api/admin/events/backfill-coordinates - Backfill lat/lng for events missing coordinates (admin only)
+router.post("/events/backfill-coordinates", authenticateToken, authorize(["admin"]), async (req, res) => {
   try {
-    const { type, color, image } = req.body;
+    async function geocodeAddress(venue, addressLine1, city, state, zipCode) {
+      const parts = [
+        venue && String(venue).trim(),
+        addressLine1 && String(addressLine1).trim(),
+        city && String(city).trim(),
+        state && String(state).trim(),
+        zipCode && String(zipCode).trim(),
+      ].filter(Boolean);
+      if (parts.length === 0) return null;
+      const query = parts.join(", ");
+      if (query.length < 5) return null;
+      try {
+        const resp = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+          { headers: { "User-Agent": "Eventure/1.0 (https://eventure.com/contact)" } }
+        );
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        if (!Array.isArray(data) || data.length === 0) return null;
+        const lat = parseFloat(data[0].lat);
+        const lon = parseFloat(data[0].lon);
+        if (Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lng: lon };
+        return null;
+      } catch {
+        return null;
+      }
+    }
+
+    const [rows] = await pool.execute(
+      `SELECT id, venue, address_line1, city, state, zip_code
+       FROM events
+       WHERE (lat IS NULL OR lng IS NULL)
+         AND (address_line1 IS NOT NULL AND address_line1 != ''
+              OR venue IS NOT NULL AND venue != ''
+              OR (city IS NOT NULL AND city != '' AND state IS NOT NULL AND state != '' AND zip_code IS NOT NULL AND zip_code != ''))
+       ORDER BY id ASC`
+    );
+    const events = Array.isArray(rows) ? rows : [];
+    let updated = 0;
+    let failed = 0;
+    for (const e of events) {
+      const coords = await geocodeAddress(
+        e.venue ?? "",
+        e.address_line1 ?? "",
+        e.city ?? "",
+        e.state ?? "",
+        e.zip_code ?? ""
+      );
+      if (coords) {
+        await pool.execute("UPDATE events SET lat = ?, lng = ? WHERE id = ?", [coords.lat, coords.lng, e.id]);
+        updated++;
+      } else {
+        failed++;
+      }
+      await new Promise((r) => setTimeout(r, 1100));
+    }
+    return res.status(200).json({
+      message: "Backfill complete",
+      total: events.length,
+      updated,
+      failed,
+    });
+  } catch (e) {
+    console.error("Backfill coordinates error:", e);
+    return res.status(500).json({ message: "Failed to backfill coordinates" });
+  }
+});
+
+// PUT /api/admin/settings/hero - Update hero background settings (admin only)
+router.put("/settings/hero", authenticateToken, authorize(["admin"]), async (req, res) => {
+  try {
+    const { type, color, image } = req.body || {};
 
     if (!type || (type !== "color" && type !== "image")) {
       return res.status(400).json({ message: "Invalid background type. Must be 'color' or 'image'" });
@@ -639,8 +781,9 @@ router.put("/settings/hero", async (req, res) => {
       return res.status(400).json({ message: "Color is required when type is 'color'" });
     }
 
-    if (type === "image" && !image) {
-      return res.status(400).json({ message: "Image is required when type is 'image'" });
+    const imageVal = image != null && String(image).trim() !== "" ? String(image).trim() : null;
+    if (type === "image" && !imageVal) {
+      return res.status(400).json({ message: "Image is required when type is 'image'. Upload an image first, then click Save Hero." });
     }
 
     // Ensure settings table exists (Postgres)
@@ -676,7 +819,7 @@ router.put("/settings/hero", async (req, res) => {
         INSERT INTO site_settings (setting_key, setting_value)
         VALUES ('hero_background_image', ?)
         ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
-      `, [image]);
+      `, [imageVal]);
     }
 
     return res.status(200).json({ 

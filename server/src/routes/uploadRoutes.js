@@ -22,12 +22,15 @@ if (useCloudinary) {
   });
 }
 
+const ALLOWED_EXT = /\.(jpe?g|png|gif|webp|avif)$/i;
+const ALLOWED_MIME = /^image\/(jpeg|png|gif|webp|avif)$/i;
+
 function fileFilter(req, file, cb) {
-  const allowedTypes = /jpeg|jpg|png|gif|webp/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
-  if (extname && mimetype) cb(null, true);
-  else cb(new Error("Only image files are allowed (JPEG, JPG, PNG, GIF, WEBP)"), false);
+  const ext = path.extname(file.originalname).toLowerCase();
+  const extOk = ALLOWED_EXT.test(ext);
+  const mimeOk = ALLOWED_MIME.test(file.mimetype);
+  if (extOk && mimeOk) cb(null, true);
+  else cb(new Error("Only image files are allowed (JPEG, PNG, GIF, WEBP, AVIF)"), false);
 }
 
 function uploadToCloudinary(buffer, mimetype, folder) {
@@ -92,7 +95,18 @@ const heroStorage = useCloudinary
     });
 const heroUpload = multer({ storage: heroStorage, limits: { fileSize: 10 * 1024 * 1024 }, fileFilter });
 
-router.post("/hero-image", authenticateToken, authorize(["admin"]), heroUpload.single("image"), async (req, res) => {
+router.post("/hero-image", authenticateToken, authorize(["admin"]), (req, res, next) => {
+  heroUpload.single("image")(req, res, (err) => {
+    if (err) {
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") return res.status(400).json({ message: "Image is too large. Max 10MB." });
+        return res.status(400).json({ message: err.message || "Upload error" });
+      }
+      return res.status(400).json({ message: err.message || "Only image files are allowed (JPEG, PNG, GIF, WEBP, AVIF)." });
+    }
+    next();
+  });
+}, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No image file provided" });
     let fileUrl;
@@ -106,6 +120,36 @@ router.post("/hero-image", authenticateToken, authorize(["admin"]), heroUpload.s
   } catch (error) {
     console.error("Upload error:", error);
     return res.status(500).json({ message: "Failed to upload hero image" });
+  }
+});
+
+const foundersImagesDir = path.join(__dirname, "../../uploads/founders");
+if (!fs.existsSync(foundersImagesDir)) fs.mkdirSync(foundersImagesDir, { recursive: true });
+const foundersStorage = useCloudinary
+  ? multer.memoryStorage()
+  : multer.diskStorage({
+      destination: (req, file, cb) => cb(null, foundersImagesDir),
+      filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+        const ext = path.extname(file.originalname);
+        cb(null, `founders-${uniqueSuffix}${ext}`);
+      },
+    });
+const foundersUpload = multer({ storage: foundersStorage, limits: { fileSize: 10 * 1024 * 1024 }, fileFilter });
+
+router.post("/founders-image", authenticateToken, authorize(["admin"]), foundersUpload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: "No image file provided" });
+    let fileUrl;
+    if (useCloudinary && req.file.buffer) {
+      fileUrl = await uploadToCloudinary(req.file.buffer, req.file.mimetype, "eventure/founders");
+    } else {
+      fileUrl = `/uploads/founders/${req.file.filename}`;
+    }
+    return res.status(200).json({ message: "Founders image uploaded successfully", url: fileUrl });
+  } catch (error) {
+    console.error("Upload error:", error);
+    return res.status(500).json({ message: "Failed to upload founders image" });
   }
 });
 

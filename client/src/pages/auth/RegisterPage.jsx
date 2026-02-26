@@ -259,32 +259,6 @@ function RegisterPage() {
           </button>
         </form>
 
-        <div className="flex flex-col gap-4">
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-[#e2e8f0]" />
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="bg-white px-2 text-[#62748e]">or sign up with</span>
-            </div>
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              type="button"
-              className="flex-1 h-12 border border-[#cad5e2] rounded-lg text-base text-[#314158] font-medium hover:bg-gray-50 transition-colors"
-            >
-              Google
-            </button>
-            <button
-              type="button"
-              className="flex-1 h-12 border border-[#cad5e2] rounded-lg text-base text-[#314158] font-medium hover:bg-gray-50 transition-colors"
-            >
-              Facebook
-            </button>
-          </div>
-        </div>
-
         <p className="text-sm text-[#62748e] text-center">
           Already have an account?{" "}
           <Link to="/login" className="text-[#2e6b4e] hover:underline font-medium">

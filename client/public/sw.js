@@ -1,4 +1,5 @@
-const CACHE_NAME = "eventure-v2";
+// Bump this (e.g. eventure-v4) after big updates so browsers drop old cache
+const CACHE_NAME = "eventure-v3";
 
 const SKIP_CACHE_PATHS = ["/manifest.json", "/sw.js", "/robots.txt"];
 
