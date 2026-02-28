@@ -1,16 +1,13 @@
 import { Navigate } from "react-router-dom";
-import { getCurrentUser } from "../utils/auth";
+import { useCurrentUser } from "../contexts/AuthContext";
 
 function AdminProtectedRoute({ children }) {
   const token = localStorage.getItem("eventure_token");
-  const user = getCurrentUser();
+  const user = useCurrentUser();
 
-  // Check if user is authenticated
   if (!token || !user) {
     return <Navigate to="/login" replace />;
   }
-
-  // Check if user is admin
   if (user.role !== "admin") {
     return <Navigate to="/" replace />;
   }

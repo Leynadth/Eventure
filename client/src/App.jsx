@@ -7,12 +7,14 @@ import ForgotPasswordPage from './pages/auth/ForgotPasswordPage'
 import ResetPasswordPage from './pages/auth/ResetPasswordPage'
 // Public pages
 import HomePage from './pages/public/HomePage'
+import AboutUsPage from './pages/public/AboutUsPage'
 // User pages
 import DashboardPage from './pages/user/DashboardPage'
 import FavoritesPage from './pages/user/FavoritesPage'
 import MyEventsPage from './pages/user/MyEventsPage'
 import MyAccountPage from './pages/user/MyAccountPage'
 import OrganizerEventAnalyticsPage from './pages/user/OrganizerEventAnalyticsPage'
+import OrganizerSignupPage from './pages/user/OrganizerSignupPage'
 // Event pages
 import BrowseEventsPage from './pages/events/BrowseEventsPage'
 import EventsPage from './pages/events/EventsPage'
@@ -24,13 +26,16 @@ import AdminDashboardPage from './pages/admin/AdminDashboardPage'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminProtectedRoute from './components/AdminProtectedRoute'
 import ErrorBoundary from './components/ErrorBoundary'
+import { NotificationProvider } from './contexts/NotificationContext'
 
 function App() {
   return (
+    <NotificationProvider>
     <Routes>
       <Route element={<AppLayout />}>
         {/* Public routes */}
         <Route path="/" element={<HomePage />} />
+        <Route path="/about" element={<AboutUsPage />} />
         <Route path="/browse" element={<BrowseEventsPage />} />
         <Route path="/events/:id" element={<ErrorBoundary><EventDetailsPage /></ErrorBoundary>} />
         <Route path="/login" element={<LoginPage />} />
@@ -80,6 +85,14 @@ function App() {
           }
         />
         <Route
+          path="/organizer-signup"
+          element={
+            <ProtectedRoute>
+              <OrganizerSignupPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/create"
           element={
             <ProtectedRoute>
@@ -111,18 +124,17 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/admin"
+          element={
+            <AdminProtectedRoute>
+              <AdminDashboardPage />
+            </AdminProtectedRoute>
+          }
+        />
       </Route>
-      
-      {/* Admin routes - outside AppLayout to have full control */}
-      <Route
-        path="/admin"
-        element={
-          <AdminProtectedRoute>
-            <AdminDashboardPage />
-          </AdminProtectedRoute>
-        }
-      />
     </Routes>
+    </NotificationProvider>
   )
 }
 

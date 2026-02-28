@@ -187,7 +187,7 @@ router.post("/", authenticateToken, authorize(["organizer", "admin"]), async (re
         lat, lng,
         tags, ticket_price, capacity, main_image, image_2, image_3, image_4,
         is_public, created_by, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')
       RETURNING id
     `;
 
@@ -863,6 +863,168 @@ router.delete("/:id", authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("Failed to delete event:", error);
     return res.status(500).json({ message: "Failed to delete event" });
+  }
+});
+
+// POST /api/events/:id/notify-attendees - Organizer sends a message to all attendees (RSVP going)
+router.post("/:id/notify-attendees", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const eventId = parseInt(req.params.id, 10);
+    const { message } = req.body || {};
+    const messageTrimmed = message != null ? String(message).trim() : "";
+    if (!eventId || isNaN(eventId)) {
+      return res.status(400).json({ message: "Invalid event ID" });
+    }
+    if (!messageTrimmed) {
+      return res.status(400).json({ message: "Message is required" });
+    }
+    const [eventRows] = await pool.execute(
+      "SELECT id, created_by FROM events WHERE id = ? LIMIT 1",
+      [eventId]
+    );
+    if (!eventRows || eventRows.length === 0) {
+      return res.status(404).json({ message: "Event not found" });
+    }
+    if (eventRows[0].created_by.toString() !== userId) {
+      return res.status(403).json({ message: "Only the event organizer can send messages to attendees" });
+    }
+    const [attendees] = await pool.execute(
+      "SELECT user_id FROM rsvps WHERE event_id = ? AND status = 'going' AND user_id != ?",
+      [eventId, userId]
+    );
+    const insertSql =
+      "INSERT INTO event_notifications (user_id, event_id, sender_id, message) VALUES (?, ?, ?, ?)";
+    for (const row of attendees || []) {
+      await pool.execute(insertSql, [row.user_id, eventId, userId, messageTrimmed.substring(0, 2000)]);
+    }
+    return res.status(200).json({
+      message: "Message sent to attendees",
+      recipientCount: (attendees || []).length,
+    });
+  } catch (err) {
+    if (err.code === "42P01") {
+      return res.status(500).json({ message: "Notifications are not set up. Run the database migration." });
+    }
+    console.error("Notify attendees error:", err);
+    return res.status(500).json({ message: err.message || "Failed to send message" });
+  }
+});
+
+// GET /api/events/:id/announcements - List announcements for an event (public; shown on event details wall)
+router.get("/:id/announcements", async (req, res) => {
+  try {
+    const eventId = parseInt(req.params.id, 10);
+    if (!eventId || isNaN(eventId)) {
+      return res.status(400).json({ message: "Invalid event ID" });
+    }
+    const [rows] = await pool.execute(
+      `SELECT a.id, a.event_id, a.message, a.created_at,
+              u.first_name AS author_first_name, u.last_name AS author_last_name
+       FROM event_announcements a
+       JOIN users u ON u.id = a.author_id
+       WHERE a.event_id = ?
+       ORDER BY a.created_at DESC
+       LIMIT 100`,
+      [eventId]
+    ).catch(() => [[]]);
+    const list = (rows || []).map((r) => ({
+      id: r.id,
+      eventId: r.event_id,
+      message: r.message,
+      createdAt: r.created_at,
+      authorName: `${r.author_first_name || ""} ${r.author_last_name || ""}`.trim() || "Organizer",
+    }));
+    return res.status(200).json(list);
+  } catch (err) {
+    if (err.code === "42P01") return res.status(200).json([]);
+    console.error("Get announcements error:", err);
+    return res.status(500).json({ message: err.message || "Failed to load announcements" });
+  }
+});
+
+// POST /api/events/:id/announcements - Organizer posts announcement (saved to wall + sent to attendees' notifications)
+router.post("/:id/announcements", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.id != null ? parseInt(String(req.user.id), 10) : null;
+    const eventId = parseInt(req.params.id, 10);
+    const { message } = req.body || {};
+    const messageTrimmed = message != null ? String(message).trim() : "";
+    if (!eventId || isNaN(eventId)) return res.status(400).json({ message: "Invalid event ID" });
+    if (!messageTrimmed) return res.status(400).json({ message: "Message is required" });
+    if (!userId || !Number.isFinite(userId)) return res.status(401).json({ message: "Authentication required" });
+
+    const [eventRows] = await pool.execute("SELECT id, created_by FROM events WHERE id = ? LIMIT 1", [eventId]);
+    if (!eventRows || eventRows.length === 0) return res.status(404).json({ message: "Event not found" });
+    if (eventRows[0].created_by.toString() !== String(userId)) {
+      return res.status(403).json({ message: "Only the event organizer can send announcements" });
+    }
+
+    await pool.execute(
+      "INSERT INTO event_announcements (event_id, author_id, message) VALUES (?, ?, ?)",
+      [eventId, userId, messageTrimmed.substring(0, 2000)]
+    ).catch((e) => {
+      if (e.code === "42P01") throw new Error("Announcements are not set up. Run the database migration.");
+      throw e;
+    });
+
+    const [announcementRows] = await pool.execute(
+      "SELECT id, event_id, message, created_at FROM event_announcements WHERE event_id = ? AND author_id = ? ORDER BY created_at DESC LIMIT 1",
+      [eventId, userId]
+    );
+    const announcement = announcementRows && announcementRows[0] ? announcementRows[0] : null;
+    const [attendees] = await pool.execute(
+      "SELECT user_id FROM rsvps WHERE event_id = ? AND status = 'going' AND user_id != ?",
+      [eventId, userId]
+    );
+    const notifSql = "INSERT INTO event_notifications (user_id, event_id, sender_id, message) VALUES (?, ?, ?, ?)";
+    for (const row of attendees || []) {
+      await pool.execute(notifSql, [row.user_id, eventId, userId, messageTrimmed.substring(0, 2000)]).catch(() => {});
+    }
+
+    const [authorRows] = await pool.execute("SELECT first_name, last_name FROM users WHERE id = ?", [userId]);
+    const author = authorRows && authorRows[0] ? authorRows[0] : {};
+    const authorName = `${author.first_name || ""} ${author.last_name || ""}`.trim() || "Organizer";
+
+    return res.status(201).json({
+      announcement: announcement
+        ? { id: announcement.id, eventId: announcement.event_id, message: announcement.message, createdAt: announcement.created_at, authorName }
+        : null,
+      recipientCount: (attendees || []).length,
+    });
+  } catch (err) {
+    console.error("Post announcement error:", err);
+    return res.status(500).json({ message: err.message || "Failed to send announcement" });
+  }
+});
+
+// DELETE /api/events/:id/announcements/:announcementId - Organizer removes announcement from wall
+router.delete("/:id/announcements/:announcementId", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.id != null ? parseInt(String(req.user.id), 10) : null;
+    const eventId = parseInt(req.params.id, 10);
+    const announcementId = parseInt(req.params.announcementId, 10);
+    if (!eventId || isNaN(eventId) || !announcementId || isNaN(announcementId)) {
+      return res.status(400).json({ message: "Invalid event or announcement ID" });
+    }
+    if (!userId || !Number.isFinite(userId)) return res.status(401).json({ message: "Authentication required" });
+
+    const [eventRows] = await pool.execute("SELECT id, created_by FROM events WHERE id = ? LIMIT 1", [eventId]);
+    if (!eventRows || eventRows.length === 0) return res.status(404).json({ message: "Event not found" });
+    if (eventRows[0].created_by.toString() !== String(userId)) {
+      return res.status(403).json({ message: "Only the event organizer can remove announcements" });
+    }
+
+    const [result] = await pool.execute(
+      "DELETE FROM event_announcements WHERE id = ? AND event_id = ?",
+      [announcementId, eventId]
+    );
+    if (result.affectedRows === 0) return res.status(404).json({ message: "Announcement not found" });
+    return res.status(200).json({ message: "Announcement removed from wall" });
+  } catch (err) {
+    if (err.code === "42P01") return res.status(200).json({ message: "Announcement removed from wall" });
+    console.error("Delete announcement error:", err);
+    return res.status(500).json({ message: err.message || "Failed to remove announcement" });
   }
 });
 

@@ -1,17 +1,78 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { logout, getProfile } from "../../api";
-import { getCurrentUser } from "../../utils/auth";
+import { logout, getProfile, getNotifications, dismissSignupNotification, markNotificationRead, markNotificationsViewed, clearNotifications } from "../../api";
+import { useAuth } from "../../contexts/AuthContext";
 import RoleBadge from "../ui/RoleBadge";
 
 function NavBar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const user = getCurrentUser();
+  const { user, setUser } = useAuth();
   const isLoggedIn = !!user;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profilePictureUrl, setProfilePictureUrl] = useState(null);
   const [settingsDropdownOpen, setSettingsDropdownOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState({ organizerSignup: null, messages: [], unreadCount: 0 });
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [reasonPopup, setReasonPopup] = useState(null); // { message, reason } for admin unattend
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    getNotifications()
+      .then((data) => setNotifications((prev) => ({ ...prev, unreadCount: data.unreadCount ?? 0 })))
+      .catch(() => {});
+  }, [isLoggedIn]);
+
+  // Refetch unread count when tab regains focus (e.g. after announcement sent in another tab)
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const onFocus = () => {
+      getNotifications()
+        .then((data) => setNotifications((prev) => ({ ...prev, unreadCount: data.unreadCount ?? 0 })))
+        .catch(() => {});
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [isLoggedIn]);
+
+  // Poll for new notifications so bell turns red when announcements (or other notifs) arrive
+  const NOTIFICATION_POLL_MS = 45000;
+  useEffect(() => {
+    if (!isLoggedIn || notificationsOpen) return;
+    const interval = setInterval(() => {
+      getNotifications()
+        .then((data) => setNotifications((prev) => ({ ...prev, unreadCount: data.unreadCount ?? 0 })))
+        .catch(() => {});
+    }, NOTIFICATION_POLL_MS);
+    return () => clearInterval(interval);
+  }, [isLoggedIn, notificationsOpen]);
+
+  useEffect(() => {
+    if (!notificationsOpen || !isLoggedIn) return;
+    setNotificationsLoading(true);
+    getNotifications()
+      .then((data) => {
+        setNotifications({
+          organizerSignup: data.organizerSignup ?? null,
+          messages: data.messages ?? [],
+          unreadCount: 0,
+        });
+        markNotificationsViewed().catch(() => {});
+      })
+      .catch(() => {})
+      .finally(() => setNotificationsLoading(false));
+  }, [notificationsOpen, isLoggedIn]);
+
+  useEffect(() => {
+    if (!notificationsOpen) return;
+    const handleClickOutside = (e) => {
+      if (e.target.closest("[data-notification-bell]") || e.target.closest("[data-notification-dropdown]")) return;
+      setNotificationsOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [notificationsOpen]);
 
   const handleLogout = async () => {
     try {
@@ -20,7 +81,7 @@ function NavBar() {
       console.error("Logout error:", err);
     } finally {
       localStorage.removeItem("eventure_token");
-      localStorage.removeItem("eventure_user");
+      setUser(null);
       setMobileMenuOpen(false);
       navigate("/login", { replace: true });
     }
@@ -92,7 +153,7 @@ function NavBar() {
   return (
     <header className="bg-white border-b border-[#e2e8f0] sticky top-0 z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-14 lg:h-16 gap-4">
+        <div className="flex items-center justify-between h-14 lg:h-16 gap-4 relative">
           {/* Logo */}
           <Link 
             to="/" 
@@ -148,6 +209,25 @@ function NavBar() {
                     + Create Event
                   </Link>
                 )}
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    data-notification-bell
+                    onClick={() => setNotificationsOpen(!notificationsOpen)}
+                    className="relative p-2 text-[#64748b] hover:text-[#2e6b4e] hover:bg-[#f8fafc] rounded-lg transition-colors"
+                    aria-label="Notifications"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                    </svg>
+                    {notifications.unreadCount > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-red-500 text-white text-xs font-semibold rounded-full">
+                        {notifications.unreadCount > 99 ? "99+" : notifications.unreadCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
                 <div className="flex items-center gap-3 pl-3 border-l border-[#e2e8f0]">
                   {profilePictureUrl ? (
                     <img
@@ -203,8 +283,140 @@ function NavBar() {
             )}
           </div>
 
-          {/* Mobile: hamburger + Create */}
+          {/* Notifications dropdown (shared; fixed on mobile, absolute on desktop) */}
+          {notificationsOpen && (
+            <div data-notification-dropdown className="fixed right-4 left-4 sm:left-auto sm:w-[340px] top-[3.6rem] lg:absolute lg:right-4 lg:top-full lg:mt-1 lg:w-[340px] max-h-[80vh] overflow-auto bg-white rounded-xl shadow-lg border border-[#e2e8f0] py-2 z-[60]">
+              <div className="px-3 py-2 border-b border-[#e2e8f0] flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-[#0f172b]">Notifications</h3>
+                {notifications.messages?.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await clearNotifications();
+                        setNotifications((prev) => ({
+                          ...prev,
+                          messages: [],
+                          unreadCount: prev.organizerSignup && prev.organizerSignup.status !== "approved" ? 1 : 0,
+                        }));
+                      } catch {}
+                    }}
+                    className="text-xs font-medium text-[#64748b] hover:text-[#2e6b4e]"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+              {notificationsLoading ? (
+                <div className="px-4 py-8 text-center text-[#64748b] text-sm">Loading…</div>
+              ) : (
+                <div className="py-1">
+                  {notifications.organizerSignup && (
+                    <div className="flex items-start gap-2 px-4 py-3 hover:bg-[#f8fafc] group">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-[#0f172b]">
+                          Status of Organizer Registration:{" "}
+                          <span className={notifications.organizerSignup.status === "approved" ? "text-green-600" : notifications.organizerSignup.status === "rejected" ? "text-red-600" : "text-amber-600"}>
+                            {notifications.organizerSignup.status === "rejected" ? "Denied" : notifications.organizerSignup.status === "approved" ? "Approved" : "Pending"}
+                          </span>
+                        </p>
+                        {notifications.organizerSignup.status === "rejected" && (
+                          <p className="text-xs text-[#64748b] mt-0.5">You may reapply in 2 weeks.</p>
+                        )}
+                      </div>
+                      {notifications.organizerSignup.status === "approved" && (
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            try {
+                              await dismissSignupNotification(notifications.organizerSignup.id);
+                              setNotifications((prev) => ({ ...prev, organizerSignup: null, unreadCount: Math.max(0, (prev.unreadCount || 0) - 1) }));
+                            } catch {}
+                          }}
+                          className="shrink-0 p-1 text-[#94a3b8] hover:text-[#0f172b] rounded"
+                          aria-label="Dismiss"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {notifications.messages.length === 0 && !notifications.organizerSignup && (
+                    <p className="px-4 py-6 text-sm text-[#64748b] text-center">No notifications</p>
+                  )}
+                  {notifications.messages.map((msg) => (
+                    msg.reason ? (
+                      <button
+                        key={msg.id}
+                        type="button"
+                        onClick={() => {
+                          if (!msg.readAt) markNotificationRead(msg.id).catch(() => {});
+                          setReasonPopup({ message: msg.message, reason: msg.reason });
+                          setNotificationsOpen(false);
+                        }}
+                        className={`block w-full text-left px-4 py-3 hover:bg-[#f8fafc] border-b border-[#f1f5f9] last:border-0 ${!msg.readAt ? "bg-[#f0fdf4]/50" : ""}`}
+                      >
+                        <p className="text-xs text-[#64748b]">{msg.senderName} · {msg.eventTitle}</p>
+                        <p className="text-sm text-[#0f172b] mt-0.5 line-clamp-2">{msg.message}</p>
+                      </button>
+                    ) : (
+                      <Link
+                        key={msg.id}
+                        to={`/events/${msg.eventId}`}
+                        onClick={() => {
+                          setNotificationsOpen(false);
+                          if (!msg.readAt) markNotificationRead(msg.id).catch(() => {});
+                        }}
+                        className={`block px-4 py-3 hover:bg-[#f8fafc] border-b border-[#f1f5f9] last:border-0 ${!msg.readAt ? "bg-[#f0fdf4]/50" : ""}`}
+                      >
+                        <p className="text-xs text-[#64748b]">{msg.senderName} · {msg.eventTitle}</p>
+                        <p className="text-sm text-[#0f172b] mt-0.5 line-clamp-2">{msg.message}</p>
+                      </Link>
+                    )
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Reason popup (admin unattend) */}
+          {reasonPopup && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50" onClick={() => setReasonPopup(null)}>
+              <div className="bg-white rounded-xl shadow-xl border border-[#e2e8f0] max-w-sm w-full p-5" onClick={(e) => e.stopPropagation()}>
+                <p className="text-sm text-[#64748b] mb-2">{reasonPopup.message}</p>
+                <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-lg p-3 mb-4">
+                  <p className="text-xs font-medium text-[#64748b] uppercase tracking-wide mb-1">Reason</p>
+                  <p className="text-sm text-[#0f172b] whitespace-pre-wrap">{reasonPopup.reason}</p>
+                </div>
+                <button type="button" onClick={() => setReasonPopup(null)} className="w-full px-4 py-2 text-sm font-medium text-white bg-[#2e6b4e] rounded-lg hover:bg-[#255a43]">
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Mobile: notifications + Create + hamburger */}
           <div className="lg:hidden flex items-center gap-2 shrink-0">
+            {isLoggedIn && (
+              <button
+                type="button"
+                data-notification-bell
+                onClick={() => setNotificationsOpen(!notificationsOpen)}
+                className="relative p-2 text-[#45556c] hover:text-[#2e6b4e] hover:bg-gray-50 rounded-lg transition-colors"
+                aria-label="Notifications"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                {notifications.unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-0.5 flex items-center justify-center bg-red-500 text-white text-[10px] font-semibold rounded-full">
+                    {notifications.unreadCount > 99 ? "99+" : notifications.unreadCount}
+                  </span>
+                )}
+              </button>
+            )}
             {isLoggedIn && (user.role === "organizer" || user.role === "admin") && (
               <Link
                 to="/events/new"

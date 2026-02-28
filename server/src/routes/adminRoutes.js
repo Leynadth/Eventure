@@ -126,12 +126,6 @@ router.get("/stats", async (req, res) => {
     `);
     const eventsLastMonth = Number(eventsLastMonthRows[0]?.count) || 0;
 
-    // Get pending approvals count
-    const [pendingRows] = await pool.execute(
-      "SELECT COUNT(*) as count FROM events WHERE status = 'pending'"
-    );
-    const pendingApprovals = Number(pendingRows[0]?.count) || 0;
-
     // Get popular category
     const [categoryRows] = await pool.execute(`
       SELECT category, COUNT(*) as count
@@ -148,7 +142,6 @@ router.get("/stats", async (req, res) => {
     return res.status(200).json({
       totalUsers,
       totalEvents,
-      pendingApprovals,
       popularCategory,
       usersThisMonth,
       usersLastMonth,
@@ -222,55 +215,87 @@ router.get("/events", async (req, res) => {
   }
 });
 
-// PUT /api/admin/events/:id/approve - Approve an event
-router.put("/events/:id/approve", async (req, res) => {
+// GET /api/admin/events/:id - Get full event details for admin (any status) + attendees
+router.get("/events/:id", async (req, res) => {
   try {
     const eventId = parseInt(req.params.id, 10);
-
     if (!eventId || isNaN(eventId)) {
       return res.status(400).json({ message: "Invalid event ID" });
     }
 
-    // Check if event exists
-    const [eventRows] = await pool.execute("SELECT id, status FROM events WHERE id = ?", [eventId]);
+    const [eventRows] = await pool.execute(
+      `SELECT e.id, e.title, e.description, e.starts_at, e.ends_at, e.venue,
+              e.address_line1, e.address_line2, e.city, e.state, e.zip_code, e.location,
+              e.category, e.status, e.capacity, e.ticket_price, e.created_at, e.created_by,
+              e.approved_at, e.approved_by,
+              CONCAT(u.first_name, ' ', u.last_name) as organizer_name,
+              u.email as organizer_email,
+              CONCAT(approver.first_name, ' ', approver.last_name) as approved_by_name,
+              approver.email as approved_by_email
+       FROM events e
+       LEFT JOIN users u ON e.created_by = u.id
+       LEFT JOIN users approver ON e.approved_by = approver.id
+       WHERE e.id = ?`,
+      [eventId]
+    );
 
     if (!eventRows || eventRows.length === 0) {
       return res.status(404).json({ message: "Event not found" });
     }
 
-    // Update event status to approved
-    await pool.execute("UPDATE events SET status = 'approved' WHERE id = ?", [eventId]);
+    const [attendeesRows] = await pool.execute(
+      `SELECT r.id as rsvp_id, r.created_at as signed_up_at, r.status as rsvp_status,
+              u.id as user_id, u.first_name, u.last_name, u.email
+       FROM rsvps r
+       INNER JOIN users u ON r.user_id = u.id
+       WHERE r.event_id = ? AND r.status = 'going'
+       ORDER BY r.created_at ASC`,
+      [eventId]
+    );
 
-    return res.status(200).json({ message: "Event approved successfully" });
+    const event = eventRows[0];
+    const attendees = (attendeesRows || []).map((row) => ({
+      rsvp_id: row.rsvp_id,
+      user_id: row.user_id,
+      first_name: row.first_name,
+      last_name: row.last_name,
+      email: row.email,
+      signed_up_at: row.signed_up_at,
+      rsvp_status: row.rsvp_status,
+    }));
+
+    return res.status(200).json({
+      event: {
+        id: event.id,
+        title: event.title,
+        description: event.description,
+        starts_at: event.starts_at,
+        ends_at: event.ends_at,
+        venue: event.venue,
+        address_line1: event.address_line1,
+        address_line2: event.address_line2,
+        city: event.city,
+        state: event.state,
+        zip_code: event.zip_code,
+        location: event.location,
+        category: event.category,
+        status: event.status,
+        capacity: event.capacity,
+        ticket_price: event.ticket_price,
+        created_at: event.created_at,
+        created_by: event.created_by,
+        approved_at: event.approved_at,
+        approved_by: event.approved_by,
+        approved_by_name: event.approved_by_name,
+        approved_by_email: event.approved_by_email,
+        organizer_name: event.organizer_name,
+        organizer_email: event.organizer_email,
+      },
+      attendees,
+    });
   } catch (error) {
-    console.error("Failed to approve event:", error);
-    return res.status(500).json({ message: "Failed to approve event" });
-  }
-});
-
-// PUT /api/admin/events/:id/decline - Decline an event
-router.put("/events/:id/decline", async (req, res) => {
-  try {
-    const eventId = parseInt(req.params.id, 10);
-
-    if (!eventId || isNaN(eventId)) {
-      return res.status(400).json({ message: "Invalid event ID" });
-    }
-
-    // Check if event exists
-    const [eventRows] = await pool.execute("SELECT id, status FROM events WHERE id = ?", [eventId]);
-
-    if (!eventRows || eventRows.length === 0) {
-      return res.status(404).json({ message: "Event not found" });
-    }
-
-    // Update event status to declined
-    await pool.execute("UPDATE events SET status = 'declined' WHERE id = ?", [eventId]);
-
-    return res.status(200).json({ message: "Event declined successfully" });
-  } catch (error) {
-    console.error("Failed to decline event:", error);
-    return res.status(500).json({ message: "Failed to decline event" });
+    console.error("Failed to fetch admin event details:", error);
+    return res.status(500).json({ message: "Failed to fetch event details" });
   }
 });
 
@@ -426,6 +451,48 @@ router.get("/users/:id", async (req, res) => {
   }
 });
 
+// PATCH /api/admin/users/:id - Update a user's role (only user/organizer; cannot change admins)
+router.patch("/users/:id", async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    const { role: newRole } = req.body || {};
+
+    if (!userId || isNaN(userId)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+    if (newRole !== "user" && newRole !== "organizer") {
+      return res.status(400).json({ message: "Role must be 'user' or 'organizer'" });
+    }
+
+    const [userRows] = await pool.execute(
+      "SELECT id, role FROM users WHERE id = ?",
+      [userId]
+    );
+    if (!userRows || userRows.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    const user = userRows[0];
+    if (user.role === "admin") {
+      return res.status(403).json({ message: "Cannot change an admin user's role" });
+    }
+
+    await pool.execute("UPDATE users SET role = ? WHERE id = ?", [newRole, userId]);
+
+    // When role is touched: clear organizer_signups so the user can reapply or doesn't have a stale queue entry.
+    // - Promoted to organizer: remove signup so it doesn't stay in the queue.
+    // - Demoted to user: remove signup so they can sign up as organizer again.
+    await pool.execute("DELETE FROM organizer_signups WHERE user_id = ?", [userId]).catch(() => {});
+
+    return res.status(200).json({ message: "Role updated", role: newRole });
+  } catch (error) {
+    console.error("Failed to update user role:", error);
+    return res.status(500).json({
+      message: "Failed to update user role",
+      error: process.env.NODE_ENV !== "production" ? error.message : undefined,
+    });
+  }
+});
+
 // DELETE /api/admin/users/:id - Delete a user (only organizers/users, not admins)
 router.delete("/users/:id", async (req, res) => {
   try {
@@ -465,14 +532,18 @@ router.delete("/users/:id", async (req, res) => {
   }
 });
 
-// DELETE /api/admin/users/:userId/unattend/:eventId - Unattend a user from an event
+// DELETE /api/admin/users/:userId/unattend/:eventId - Unattend a user from an event (body: { reason } required)
 router.delete("/users/:userId/unattend/:eventId", async (req, res) => {
   try {
     const userId = parseInt(req.params.userId, 10);
     const eventId = parseInt(req.params.eventId, 10);
+    const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
 
     if (!userId || isNaN(userId) || !eventId || isNaN(eventId)) {
       return res.status(400).json({ message: "Invalid user ID or event ID" });
+    }
+    if (!reason) {
+      return res.status(400).json({ message: "Reason for unattending is required" });
     }
 
     // Delete RSVP
@@ -485,10 +556,33 @@ router.delete("/users/:userId/unattend/:eventId", async (req, res) => {
       return res.status(404).json({ message: "RSVP not found" });
     }
 
+    // Notify the unattended user (they see it in the bell dropdown). Use integer IDs for Postgres.
+    const adminId = req.user?.id != null ? parseInt(String(req.user.id), 10) : null;
+    if (!adminId || !Number.isFinite(adminId)) {
+      console.error("Unattend: missing or invalid admin id, notification skipped. req.user:", req.user?.id);
+    } else {
+      const [eventRows] = await pool.execute("SELECT title FROM events WHERE id = ?", [eventId]);
+      const eventTitle = eventRows?.[0]?.title || "an event";
+      const message = `You have been unattended from ${eventTitle}, by an admin. Click to see reason.`;
+      const insertWithReason = "INSERT INTO event_notifications (user_id, event_id, sender_id, message, reason) VALUES (?, ?, ?, ?, ?)";
+      const insertWithoutReason = "INSERT INTO event_notifications (user_id, event_id, sender_id, message) VALUES (?, ?, ?, ?)";
+      const paramsWithReason = [userId, eventId, adminId, message, reason];
+      const paramsWithoutReason = [userId, eventId, adminId, message];
+      try {
+        await pool.execute(insertWithReason, paramsWithReason);
+      } catch (notifErr) {
+        try {
+          await pool.execute(insertWithoutReason, paramsWithoutReason);
+        } catch (fallbackErr) {
+          console.error("Failed to create unattend notification (tried with and without reason):", notifErr.message, fallbackErr.message);
+        }
+      }
+    }
+
     return res.status(200).json({ message: "User unattended from event successfully" });
   } catch (error) {
     console.error("Failed to unattend user from event:", error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       message: "Failed to unattend user from event",
       error: process.env.NODE_ENV !== "production" ? error.message : undefined
     });
@@ -616,17 +710,14 @@ router.get("/analytics", async (req, res) => {
 });
 
 
-// PUT /api/admin/settings/content - Update editable text blocks
+// PUT /api/admin/settings/content - Update editable text blocks (hero + most attended only; about/founders moved to About page)
 router.put("/settings/content", async (req, res) => {
   try {
-    const { home_hero_headline, home_hero_subheadline, home_about_title, home_about_body, home_most_attended_title, home_founders_image } = req.body;
+    const { home_hero_headline, home_hero_subheadline, home_most_attended_title } = req.body;
     const updates = [
       ["content_home_hero_headline", home_hero_headline],
       ["content_home_hero_subheadline", home_hero_subheadline],
-      ["content_home_about_title", home_about_title],
-      ["content_home_about_body", home_about_body],
       ["content_home_most_attended_title", home_most_attended_title],
-      ["content_home_founders_image", home_founders_image],
     ];
     for (const [key, value] of updates) {
       const val = value != null ? String(value).substring(0, 10000) : "";
@@ -765,6 +856,91 @@ router.post("/events/backfill-coordinates", authenticateToken, authorize(["admin
   } catch (e) {
     console.error("Backfill coordinates error:", e);
     return res.status(500).json({ message: "Failed to backfill coordinates" });
+  }
+});
+
+// GET /api/admin/organizer-signups - List only pending organizer signup applications (admin). Approved/rejected are not shown.
+router.get("/organizer-signups", async (req, res) => {
+  try {
+    const [rows] = await pool.execute(`
+      SELECT 
+        s.id,
+        s.user_id,
+        s.organization_name,
+        s.event_types,
+        s.reason,
+        s.additional_info,
+        s.status,
+        s.created_at,
+        s.reviewed_at,
+        u.first_name,
+        u.last_name,
+        u.email,
+        u.created_at as user_created_at
+      FROM organizer_signups s
+      JOIN users u ON u.id = s.user_id
+      WHERE s.status = 'pending'
+      ORDER BY s.created_at DESC
+    `).catch(() => [[]]);
+    const list = (rows || []).map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      organizationName: r.organization_name || null,
+      eventTypes: r.event_types || null,
+      reason: r.reason || null,
+      additionalInfo: r.additional_info || null,
+      status: r.status,
+      createdAt: r.created_at,
+      reviewedAt: r.reviewed_at || null,
+      user: {
+        firstName: r.first_name,
+        lastName: r.last_name,
+        email: r.email,
+        createdAt: r.user_created_at,
+      },
+    }));
+    return res.status(200).json(list);
+  } catch (e) {
+    if (e.code === "42P01") return res.status(200).json([]);
+    console.error("Failed to fetch organizer signups:", e);
+    return res.status(500).json({ message: "Failed to fetch organizer signups" });
+  }
+});
+
+// PATCH /api/admin/organizer-signups/:id - Approve or reject signup (admin)
+router.patch("/organizer-signups/:id", async (req, res) => {
+  try {
+    const signupId = parseInt(req.params.id, 10);
+    const adminId = req.user?.id;
+    const { action } = req.body || {};
+    if (!signupId || isNaN(signupId)) return res.status(400).json({ message: "Invalid signup ID" });
+    if (action !== "approve" && action !== "reject") return res.status(400).json({ message: "Action must be 'approve' or 'reject'" });
+
+    const [signupRows] = await pool.execute(
+      "SELECT id, user_id, status FROM organizer_signups WHERE id = ?",
+      [signupId]
+    );
+    if (!signupRows || signupRows.length === 0) return res.status(404).json({ message: "Signup not found" });
+    const signup = signupRows[0];
+    if (signup.status !== "pending") return res.status(400).json({ message: "This signup has already been reviewed" });
+
+    const now = new Date().toISOString();
+    if (action === "approve") {
+      await pool.execute("UPDATE users SET role = ? WHERE id = ?", ["organizer", signup.user_id]);
+      await pool.execute(
+        "UPDATE organizer_signups SET status = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?",
+        ["approved", now, adminId, signupId]
+      );
+      return res.status(200).json({ message: "Applicant approved as organizer" });
+    }
+    await pool.execute(
+      "UPDATE organizer_signups SET status = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?",
+      ["rejected", now, adminId, signupId]
+    );
+    return res.status(200).json({ message: "Signup rejected" });
+  } catch (e) {
+    console.error("Failed to update organizer signup:", e);
+    return res.status(500).json({ message: "Failed to update signup" });
   }
 });
 

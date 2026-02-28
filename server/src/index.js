@@ -7,7 +7,7 @@ const rateLimit = require("express-rate-limit");
 const path = require("path");
 
 const sequelize = require("./db");
-const { pool } = require("./db");
+const { pool, pgPool } = require("./db");
 const authRoutes = require("./routes/authRoutes");
 const eventsRoutes = require("./routes/eventsRoutes");
 const favoritesRoutes = require("./routes/favoritesRoutes");
@@ -15,6 +15,8 @@ const rsvpRoutes = require("./routes/rsvpRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const followRoutes = require("./routes/followRoutes");
+const organizerSignupRoutes = require("./routes/organizerSignupRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 const devRoutes = require("./routes/devRoutes");
 const { verifyTransport, getMode, isSmtpConfigured } = require("./utils/mailer");
 
@@ -46,8 +48,8 @@ const corsOptions = {
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    // Allow Cloudflare Pages preview URLs (*.pages.dev)
     if (origin.endsWith(".pages.dev")) return callback(null, true);
+    if (origin.endsWith(".vercel.app")) return callback(null, true);
     callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
@@ -98,6 +100,8 @@ app.use("/api/rsvp", rsvpRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/follows", followRoutes);
+app.use("/api/organizer-signup", organizerSignupRoutes);
+app.use("/api/notifications", notificationRoutes);
 if (process.env.NODE_ENV !== "production") {
   app.use("/api", devRoutes);
 }
@@ -115,10 +119,42 @@ app.use((err, req, res, next) => {
     console.log("Connecting to database...");
     await sequelize.authenticate();
     console.log("Database connected successfully");
+
+    // Ensure event_notifications.reason exists (for admin unattend notifications on live)
+    try {
+      await pgPool.query("ALTER TABLE event_notifications ADD COLUMN IF NOT EXISTS reason TEXT NULL");
+      await pgPool.query("ALTER TABLE event_notifications ADD COLUMN IF NOT EXISTS viewed_at TIMESTAMP NULL");
+      console.log("Database migration check: event_notifications.reason, viewed_at OK");
+    } catch (migErr) {
+      if (migErr.code === "42P01") {
+        console.warn("event_notifications table not found; run server/database/add_notifications.sql first.");
+      } else {
+        console.warn("Migration check (event_notifications.reason):", migErr.message);
+      }
+    }
+
+    try {
+      await pgPool.query(`
+        CREATE TABLE IF NOT EXISTS event_announcements (
+          id BIGSERIAL PRIMARY KEY,
+          event_id BIGINT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          author_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          message TEXT NOT NULL,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await pgPool.query("CREATE INDEX IF NOT EXISTS idx_event_announcements_event_id ON event_announcements (event_id)");
+      await pgPool.query("CREATE INDEX IF NOT EXISTS idx_event_announcements_created_at ON event_announcements (created_at DESC)");
+      console.log("Database migration check: event_announcements OK");
+    } catch (migErr) {
+      if (migErr.code !== "42P01") console.warn("Migration check (event_announcements):", migErr.message);
+    }
+
     await verifyTransport();
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
-      console.log(`Health check: http://localhost:${PORT}/health`);
+      const host = process.env.NODE_ENV === "production" ? "this server" : `http://localhost:${PORT}`;
+      console.log(`Health check: ${host}/health`);
     });
   } catch (error) {
     console.error("Failed to start server:", error.message);

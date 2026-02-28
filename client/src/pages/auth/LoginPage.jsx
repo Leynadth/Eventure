@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { login } from "../../api";
+import { useAuth } from "../../contexts/AuthContext";
 
 function EyeIcon({ show, onClick }) {
   return (
@@ -27,6 +28,7 @@ function EyeIcon({ show, onClick }) {
 }
 
 function LoginPage() {
+  const { user, setUser } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -40,18 +42,18 @@ function LoginPage() {
 
   useEffect(() => {
     const token = localStorage.getItem("eventure_token");
-    if (token) {
-      try {
-        const stored = localStorage.getItem("eventure_user");
-        const user = stored ? JSON.parse(stored) : null;
-        if (user?.role === "admin") {
-          navigate("/admin", { replace: true });
-          return;
-        }
-      } catch (_) {}
+    if (token && user) {
+      if (user.role === "admin") {
+        navigate("/admin", { replace: true });
+        return;
+      }
+      if (user.role === "user") {
+        navigate("/my-events", { replace: true });
+        return;
+      }
       navigate(returnTo, { replace: true });
     }
-  }, [navigate, returnTo]);
+  }, [user, navigate, returnTo]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -60,9 +62,11 @@ function LoginPage() {
     try {
       const data = await login(email.trim().toLowerCase(), password);
       if (data.token) localStorage.setItem("eventure_token", data.token);
-      if (data.user) localStorage.setItem("eventure_user", JSON.stringify(data.user));
+      if (data.user) setUser(data.user);
       if (data.user?.role === "admin") {
         navigate("/admin", { replace: true });
+      } else if (data.user?.role === "user") {
+        navigate("/my-events", { replace: true });
       } else {
         navigate(returnTo, { replace: true });
       }
@@ -77,8 +81,8 @@ function LoginPage() {
     "h-12 w-full rounded-xl border border-[#e2e8f0] bg-[#f8fafc] pl-4 pr-12 text-[#0f172a] placeholder:text-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#2e6b4e]/50 focus:border-[#2e6b4e] transition-shadow";
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#f8fafc] via-white to-[#ecfdf5] p-4 sm:p-6 font-[Arimo,sans-serif]">
-      <div className="w-full max-w-[420px]">
+    <div className="min-h-[100dvh] sm:min-h-screen flex items-center justify-center bg-gradient-to-br from-[#f8fafc] via-white to-[#ecfdf5] p-4 sm:p-6 py-8 font-[Arimo,sans-serif]">
+      <div className="w-full max-w-[420px] min-w-0">
         <Link
           to="/"
           className="inline-flex items-center gap-2 text-sm text-[#64748b] hover:text-[#2e6b4e] transition-colors mb-6"

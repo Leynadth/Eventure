@@ -91,9 +91,9 @@ function EventsPage() {
 
   return (
     <AppShell>
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         {/* Page Title */}
-        <h1 className="text-3xl font-bold text-[#0f172b]">Events</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-[#0f172b]">Events</h1>
 
         {/* Controls Row */}
         <div className="flex flex-col sm:flex-row gap-4">

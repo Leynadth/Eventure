@@ -11,8 +11,12 @@ import {
   checkRSVPStatus,
   getEventDiscussion,
   postEventDiscussion,
+  notifyAttendees,
+  getEventAnnouncements,
 } from "../../api";
 import EventMap from "../../components/EventMap";
+import { useCurrentUser } from "../../contexts/AuthContext";
+import { useNotification } from "../../contexts/NotificationContext";
 
 function formatEventDate(dateString) {
   if (!dateString) return "";
@@ -147,6 +151,7 @@ function parseTags(tagsStr) {
 function EventDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { toast } = useNotification();
   const [isFavorited, setIsFavorited] = useState(false);
   const [isRsvped, setIsRsvped] = useState(false);
   const [rsvpLoading, setRsvpLoading] = useState(false);
@@ -161,6 +166,14 @@ function EventDetailsPage() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [showSignInPrompt, setShowSignInPrompt] = useState(false);
   const [recommendedEvents, setRecommendedEvents] = useState([]);
+  const [showNotifyModal, setShowNotifyModal] = useState(false);
+  const [notifyMessage, setNotifyMessage] = useState("");
+  const [notifySending, setNotifySending] = useState(false);
+  const [notifyError, setNotifyError] = useState("");
+  const [announcements, setAnnouncements] = useState([]);
+
+  const user = useCurrentUser();
+  const isOrganizer = user && event && String(event.created_by) === String(user.id);
 
   useEffect(() => {
     const load = async () => {
@@ -194,6 +207,14 @@ function EventDetailsPage() {
         } catch (e) {
           console.warn("Event comments failed (ensure backend and DB have event_discussion table):", e?.message || e);
           setComments([]);
+        }
+
+        // Load announcements (event wall)
+        try {
+          const list = await getEventAnnouncements(id);
+          setAnnouncements(Array.isArray(list) ? list : []);
+        } catch (e) {
+          setAnnouncements([]);
         }
 
       } catch (err) {
@@ -268,7 +289,7 @@ function EventDetailsPage() {
       setIsFavorited(willBeFavorited);
     } catch (err) {
       console.error("Failed to update favorite:", err);
-      alert(err.message || "Failed to update favorite. Please try again.");
+      toast(err.message || "Failed to update favorite. Please try again.", "error");
     }
   };
 
@@ -296,7 +317,7 @@ function EventDetailsPage() {
       }
     } catch (err) {
       console.error("Failed to update RSVP:", err);
-      alert(err.message || "Failed to update RSVP. Please try again.");
+      toast(err.message || "Failed to update RSVP. Please try again.", "error");
     } finally {
       setRsvpLoading(false);
     }
@@ -318,7 +339,7 @@ function EventDetailsPage() {
       const disc = await getEventDiscussion(id);
       setComments(disc.posts || []);
     } catch (err) {
-      alert(err.message || "Failed to post comment");
+      toast(err.message || "Failed to post comment", "error");
     } finally {
       setCommentSubmitting(false);
     }
@@ -412,7 +433,7 @@ function EventDetailsPage() {
   return (
     <>
     <div className="font-[Arimo,sans-serif] bg-[#f8fafc] min-h-screen">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         {/* Back link - full width */}
         <Link
           to="/browse"
@@ -663,13 +684,33 @@ function EventDetailsPage() {
           </div>
         </div>
 
+        {/* Announcements (event wall) */}
+        {announcements.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-[#e2e8f0] p-6 sm:p-8 mb-6">
+            <h2 className="text-lg font-semibold text-[#0f172b] mb-4 flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              Announcements
+            </h2>
+            <ul className="space-y-4">
+              {announcements.map((a) => (
+                <li key={a.id} className="p-4 rounded-xl bg-[#f8fafc] border border-[#e2e8f0]">
+                  <p className="text-[#0f172b] whitespace-pre-wrap">{a.message}</p>
+                  <p className="text-sm text-[#64748b] mt-2">{a.authorName} · {a.createdAt ? new Date(a.createdAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : ""}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* About This Event Section */}
         <div className="bg-white rounded-2xl shadow-sm border border-[#e2e8f0] p-6 sm:p-8 mb-6">
           <h2 className="text-lg font-semibold text-[#0f172b] mb-4 flex items-center gap-2">
             <span className="w-1 h-6 bg-[#2e6b4e] rounded-full" />
             About this event
           </h2>
-          <p className="text-[#475569] leading-relaxed whitespace-pre-line max-w-3xl">
+          <p className="text-[#475569] leading-relaxed whitespace-pre-line max-w-3xl break-words">
             {event.description}
           </p>
         </div>
@@ -695,8 +736,8 @@ function EventDetailsPage() {
                   {event.organizer?.firstName?.[0] || ""}{event.organizer?.lastName?.[0] || ""}
                 </div>
               )}
-              <div className="flex-1">
-                <p className="font-semibold text-[#0f172b]">
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-[#0f172b] break-words">
                   {event.organizer?.firstName} {event.organizer?.lastName}
                 </p>
                 {event.organizer?.showContactInfo && event.organizer?.email && (
@@ -706,6 +747,15 @@ function EventDetailsPage() {
                   >
                     {event.organizer.email}
                   </a>
+                )}
+                {isOrganizer && (
+                  <button
+                    type="button"
+                    onClick={() => { setShowNotifyModal(true); setNotifyError(""); setNotifyMessage(""); }}
+                    className="mt-3 px-4 py-2 bg-[#2e6b4e] text-white text-sm font-medium rounded-lg hover:bg-[#255a43] transition-colors"
+                  >
+                    Message attendees
+                  </button>
                 )}
               </div>
             </div>
@@ -770,7 +820,7 @@ function EventDetailsPage() {
                     <p className="text-sm font-medium text-[#0f172b]">
                       {post.user?.firstName} {post.user?.lastName}
                     </p>
-                    <p className="text-sm text-[#45556c] whitespace-pre-wrap mt-0.5">{post.message}</p>
+                    <p className="text-sm text-[#45556c] whitespace-pre-wrap break-words mt-0.5">{post.message}</p>
                     <p className="text-xs text-[#62748e] mt-1">
                       {post.createdAt ? new Date(post.createdAt).toLocaleString() : ""}
                     </p>
@@ -779,19 +829,19 @@ function EventDetailsPage() {
               ))
             )}
           </div>
-          <form onSubmit={handleCommentSubmit} className="flex gap-3">
+          <form onSubmit={handleCommentSubmit} className="flex flex-col sm:flex-row gap-3">
             <input
               type="text"
               value={commentMessage}
               onChange={(e) => setCommentMessage(e.target.value)}
               placeholder="Write a comment..."
-              className="flex-1 h-11 px-4 rounded-xl border border-[#e2e8f0] text-sm focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
+              className="flex-1 min-w-0 h-11 px-4 rounded-xl border border-[#e2e8f0] text-sm focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
               maxLength={2000}
             />
             <button
               type="submit"
               disabled={!commentMessage.trim() || commentSubmitting}
-              className="px-5 py-2.5 bg-[#2e6b4e] text-white rounded-xl text-sm font-semibold hover:bg-[#255a43] disabled:opacity-50 transition-colors"
+              className="px-5 py-2.5 bg-[#2e6b4e] text-white rounded-xl text-sm font-semibold hover:bg-[#255a43] disabled:opacity-50 transition-colors shrink-0"
             >
               {commentSubmitting ? "Posting..." : "Post"}
             </button>
@@ -801,8 +851,8 @@ function EventDetailsPage() {
           </main>
 
           {/* Sidebar - recommended events (YouTube "Up next" style) */}
-          <aside className="lg:w-[360px] shrink-0 flex flex-col">
-            <div className="bg-white rounded-2xl shadow-sm border border-[#e2e8f0] p-5 sticky top-24">
+          <aside className="w-full lg:w-[360px] shrink-0 flex flex-col">
+            <div className="bg-white rounded-2xl shadow-sm border border-[#e2e8f0] p-4 sm:p-5 lg:sticky lg:top-24">
               <h2 className="text-base font-semibold text-[#0f172b] mb-4 flex items-center gap-2">
                 <span className="w-1 h-5 bg-[#2e6b4e] rounded-full" />
                 More in {event?.state || "this state"}
@@ -853,6 +903,60 @@ function EventDetailsPage() {
         </div>
       </div>
     </div>
+
+    {/* Message attendees modal (organizer only) */}
+    {showNotifyModal && (
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50"
+        onClick={() => !notifySending && setShowNotifyModal(false)}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="notify-attendees-title"
+      >
+        <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+          <h2 id="notify-attendees-title" className="text-lg font-semibold text-[#0f172b] mb-2">Message attendees</h2>
+          <p className="text-sm text-[#64748b] mb-4">Send a message to everyone who RSVP&apos;d &quot;Going&quot; to this event. They will see it in their notifications.</p>
+          <textarea
+            value={notifyMessage}
+            onChange={(e) => { setNotifyMessage(e.target.value); setNotifyError(""); }}
+            placeholder="Type your message..."
+            rows={4}
+            className="w-full px-3 py-2 border border-[#e2e8f0] rounded-xl text-[#0f172b] placeholder:text-[#94a3b8] focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent resize-none"
+          />
+          {notifyError && <p className="text-sm text-red-600 mt-2">{notifyError}</p>}
+          <div className="flex gap-3 mt-4 justify-end">
+            <button
+              type="button"
+              onClick={() => !notifySending && setShowNotifyModal(false)}
+              className="px-4 py-2 rounded-xl border border-[#e2e8f0] text-[#475569] font-medium hover:bg-[#f8fafc] disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={notifySending || !notifyMessage.trim()}
+              onClick={async () => {
+                if (!notifyMessage.trim()) return;
+                setNotifySending(true);
+                setNotifyError("");
+                try {
+                  await notifyAttendees(id, notifyMessage.trim());
+                  setShowNotifyModal(false);
+                  setNotifyMessage("");
+                } catch (err) {
+                  setNotifyError(err.message || "Failed to send message");
+                } finally {
+                  setNotifySending(false);
+                }
+              }}
+              className="px-4 py-2 rounded-xl bg-[#2e6b4e] text-white font-medium hover:bg-[#255a43] disabled:opacity-50"
+            >
+              {notifySending ? "Sending…" : "Send"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
 
     {/* Sign-in required prompt for guests */}
     {showSignInPrompt && (

@@ -63,7 +63,9 @@ CREATE TABLE IF NOT EXISTS events (
   main_image VARCHAR(500) NULL,
   image_2 VARCHAR(500) NULL,
   image_3 VARCHAR(500) NULL,
-  image_4 VARCHAR(500) NULL
+  image_4 VARCHAR(500) NULL,
+  approved_at TIMESTAMP NULL,
+  approved_by BIGINT NULL REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_status ON events (status);

@@ -31,8 +31,8 @@ function normalizeEmail(email) {
   return String(email).trim().toLowerCase();
 }
 
-// Allowed roles for registration only (admin is created manually in DB)
-const REGISTER_ALLOWED_ROLES = ["user", "organizer"];
+// Registration creates only regular users; organizers are approved via signup flow
+const REGISTER_DEFAULT_ROLE = "user";
 
 // OTP helpers
 function generate6DigitCode() {
@@ -50,13 +50,11 @@ async function compareCode(code, codeHash) {
 // POST /auth/register
 router.post("/auth/register", async (req, res) => {
   try {
-    const { firstName, lastName, email, password, role: roleInput } = req.body;
+    const { firstName, lastName, email, password } = req.body;
     const emailNormalized = normalizeEmail(email);
 
-    // Role: only "user" and "organizer" allowed; else force "user"
-    const role = roleInput && REGISTER_ALLOWED_ROLES.includes(roleInput)
-      ? roleInput
-      : "user";
+    // All new registrations are regular users; organizer role is granted via admin approval
+    const role = REGISTER_DEFAULT_ROLE;
 
     // Validate required fields
     if (!firstName || !lastName || !email || !password) {

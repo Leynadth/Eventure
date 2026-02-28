@@ -2,11 +2,6 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { register } from "../../api";
 
-const ROLE_OPTIONS = [
-  { value: "user", label: "Join as attendee" },
-  { value: "organizer", label: "Create & manage events" },
-];
-
 function EyeIcon({ show, onClick }) {
   return (
     <button
@@ -36,7 +31,6 @@ function RegisterPage() {
     firstName: "",
     lastName: "",
     email: "",
-    role: "user",
     password: "",
     confirmPassword: "",
   });
@@ -71,7 +65,7 @@ function RegisterPage() {
         lastName: formData.lastName.trim(),
         email: formData.email.trim().toLowerCase(),
         password: formData.password,
-        role: formData.role,
+        role: "user",
       });
       navigate("/login", { state: { registered: true }, replace: true });
     } catch (err) {
@@ -86,8 +80,8 @@ function RegisterPage() {
     "h-12 w-full rounded-xl border border-[#e2e8f0] bg-[#f8fafc] pl-4 pr-12 text-[#0f172a] placeholder:text-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#2e6b4e]/50 focus:border-[#2e6b4e] transition-shadow";
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#f8fafc] via-white to-[#ecfdf5] p-4 sm:p-6 font-[Arimo,sans-serif] py-10">
-      <div className="w-full max-w-[480px]">
+    <div className="min-h-[100dvh] sm:min-h-screen flex items-center justify-center bg-gradient-to-br from-[#f8fafc] via-white to-[#ecfdf5] p-4 sm:p-6 py-8 font-[Arimo,sans-serif]">
+      <div className="w-full max-w-[480px] min-w-0">
         <Link
           to="/"
           className="inline-flex items-center gap-2 text-sm text-[#64748b] hover:text-[#2e6b4e] transition-colors mb-6"
@@ -170,32 +164,6 @@ function RegisterPage() {
                 placeholder="you@example.com"
                 className={inputBase.replace("pr-12", "pr-4")}
               />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="role" className="text-sm font-medium text-[#334155]">
-                I want to
-              </label>
-              <div className="relative">
-                <select
-                  id="role"
-                  name="role"
-                  value={formData.role}
-                  onChange={handleChange}
-                  className={`${inputBase.replace("pr-12", "pr-10")} appearance-none bg-white cursor-pointer`}
-                >
-                  {ROLE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[#64748b]">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </span>
-              </div>
             </div>
 
             <div className="flex flex-col gap-1.5">

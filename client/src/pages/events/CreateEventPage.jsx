@@ -1,15 +1,24 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link, useParams } from "react-router-dom";
 import AppShell from "../../components/layout/AppShell";
-import { getUserRole } from "../../utils/auth";
+import { useUserRole } from "../../contexts/AuthContext";
+import { useNotification } from "../../contexts/NotificationContext";
 import { createEvent, updateEvent, uploadEventImage, getEventById, deleteEvent, getCategories } from "../../api";
 import AddressAutocomplete from "../../components/AddressAutocomplete";
 
 function CreateEventPage() {
-  const { id } = useParams(); // Get event ID if editing
+  const { id } = useParams();
   const navigate = useNavigate();
-  const role = getUserRole();
+  const role = useUserRole();
+  const { toast, confirm } = useNotification();
   const isEditMode = !!id;
+
+  // Only organizers and admins can create events; users must apply via organizer signup
+  useEffect(() => {
+    if (!isEditMode && role === "user") {
+      navigate("/organizer-signup", { replace: true });
+    }
+  }, [isEditMode, role, navigate]);
   const [loading, setLoading] = useState(false);
   const [loadingEvent, setLoadingEvent] = useState(isEditMode);
   const [uploadingImages, setUploadingImages] = useState(false);
@@ -37,6 +46,7 @@ function CreateEventPage() {
     tags: "",
     date: "",
     startTime: "",
+    endDate: "",
     endTime: "",
     venue: "",
     address_line1: "",
@@ -88,6 +98,7 @@ function CreateEventPage() {
           tags: event.tags || "",
           date: startDate.toISOString().split("T")[0],
           startTime: startDate.toTimeString().slice(0, 5),
+          endDate: endDate ? endDate.toISOString().split("T")[0] : "",
           endTime: endDate ? endDate.toTimeString().slice(0, 5) : "",
           venue: event.venue || "",
           address_line1: event.address_line1 || "",
@@ -301,13 +312,17 @@ function CreateEventPage() {
         throw new Error("Capacity must be a positive number");
       }
 
-      // Combine date and times into ISO datetime strings
+      // Combine date and times into ISO datetime strings (support multi-day: end date can be different)
       const startDateTime = `${formData.date}T${formData.startTime}:00`;
-      const endDateTime = formData.endTime ? `${formData.date}T${formData.endTime}:00` : null;
+      const endDateEffective = formData.endDate && formData.endDate.trim() ? formData.endDate.trim() : formData.date;
+      const endDateTime = formData.endTime ? `${endDateEffective}T${formData.endTime}:00` : null;
 
-      // Validate that end time is after start time
-      if (endDateTime && new Date(endDateTime) <= new Date(startDateTime)) {
-        throw new Error("End time must be after start time");
+      if (endDateTime) {
+        const start = new Date(startDateTime);
+        const end = new Date(endDateTime);
+        if (end <= start) {
+          throw new Error("End date & time must be after start date & time");
+        }
       }
 
       // Prepare image URLs based on main image selection
@@ -349,7 +364,7 @@ function CreateEventPage() {
         description: String(formData.description).trim(),
         tags: formData.tags ? String(formData.tags).trim().substring(0, 500) : null,
         starts_at: new Date(startDateTime).toISOString(),
-        ends_at: endDateTime ? new Date(endDateTime).toISOString() : null,
+        ends_at: endDateTime ? new Date(endDateTime).toISOString() : new Date(startDateTime).toISOString(),
         venue: String(formData.venue).trim().substring(0, 255),
         address_line1: String(formData.address_line1).trim().substring(0, 255),
         address_line2: null,
@@ -396,22 +411,17 @@ function CreateEventPage() {
 
   const handleDelete = async () => {
     if (!isEditMode || !id) return;
-
-    if (!window.confirm("Are you sure you want to delete this event? This action cannot be undone.")) {
-      return;
-    }
-
+    const ok = await confirm({ title: "Delete event", message: "Are you sure you want to delete this event? This action cannot be undone.", confirmLabel: "Delete", cancelLabel: "Cancel", variant: "danger" });
+    if (!ok) return;
     try {
       setLoading(true);
       setError("");
       await deleteEvent(id);
-      navigate("/my-events", {
-        state: { message: "Event deleted successfully." },
-      });
+      toast("Event deleted successfully.", "success");
+      navigate("/my-events");
     } catch (err) {
       console.error("Failed to delete event:", err);
-      const errorMessage = err.message || "Failed to delete event. Please try again.";
-      setError(errorMessage);
+      toast(err.message || "Failed to delete event. Please try again.", "error");
       setLoading(false);
     }
   };
@@ -427,36 +437,54 @@ function CreateEventPage() {
   const inputBase =
     "w-full h-12 px-4 rounded-lg border border-[#cad5e2] text-base placeholder:text-[rgba(10,10,10,0.5)] focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent";
 
+  const sectionIconClass = "flex items-center justify-center w-10 h-10 rounded-xl bg-[#2e6b4e]/10 text-[#2e6b4e] shrink-0";
+
   return (
     <AppShell>
-      <div className="min-h-screen bg-gray-50 py-8">
-        <div className="max-w-4xl mx-auto px-5">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-[#0f172b] mb-2">
-              {isEditMode ? "Edit Event" : "Create New Event"}
-            </h1>
-            <p className="text-base text-[#45556c]">
-              {isEditMode ? "Update your event details" : "Share your event with the community"}
+      <div className="min-h-0 min-w-0 bg-[#f8fafc] py-4 sm:py-6 lg:py-10">
+        <div className="max-w-4xl mx-auto px-4 sm:px-5 min-w-0">
+          {/* Hero header */}
+          <div className="mb-8 sm:mb-10 rounded-2xl bg-gradient-to-br from-[#2e6b4e] to-[#255a43] px-6 py-8 sm:px-8 sm:py-10 text-white shadow-lg">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-white/20 backdrop-blur">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                </svg>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
+                {isEditMode ? "Edit Event" : "Create New Event"}
+              </h1>
+            </div>
+            <p className="text-white/90 text-base sm:text-lg max-w-xl">
+              {isEditMode ? "Update your event details and republish." : "Share your event with the community. Add dates, location, and images."}
             </p>
           </div>
 
           {/* Error Message */}
           {error && (
-            <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+            <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0" />
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Event Images Section */}
-            <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm p-6">
-              <label className="block text-sm font-medium text-[#314158] mb-4">
-                Event Images (Upload up to 4 images)
-              </label>
-              <p className="text-xs text-[#62748e] mb-4">
-                Select one image as the main image (shown on event cards). Other images will appear in a slideshow on the event details page.
-              </p>
+            <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm overflow-hidden">
+              <div className="px-4 sm:px-6 py-4 border-b border-[#e2e8f0] bg-[#fafbfc]">
+                <div className="flex items-center gap-3">
+                  <div className={sectionIconClass}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold text-[#0f172b]">Event Images</h2>
+                    <p className="text-xs text-[#64748b]">Upload up to 4 images. Pick one as the main image for cards.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-4 sm:p-6">
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {[1, 2, 3, 4].map((index) => {
@@ -556,13 +584,25 @@ function CreateEventPage() {
                   );
                 })}
               </div>
+              </div>
             </div>
 
             {/* Basic Information Section */}
-            <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm p-6 space-y-4">
-              <h2 className="text-lg font-semibold text-[#0f172b] mb-4">
-                Basic Information
-              </h2>
+            <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm overflow-hidden">
+              <div className="px-4 sm:px-6 py-4 border-b border-[#e2e8f0] bg-[#fafbfc]">
+                <div className="flex items-center gap-3">
+                  <div className={sectionIconClass}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold text-[#0f172b]">Basic Information</h2>
+                    <p className="text-xs text-[#64748b]">Title, category, description, and tags</p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-4 sm:p-6 space-y-4">
 
               {/* Event Title */}
               <div className="flex flex-col gap-1.5">
@@ -636,37 +676,42 @@ function CreateEventPage() {
                 />
               </div>
             </div>
+            </div>
 
             {/* Date & Time Section */}
             <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm p-6 space-y-4">
               <div className="flex items-center gap-2 mb-4">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-[#2e6b4e]"
-                >
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                  <line x1="16" y1="2" x2="16" y2="6" />
-                  <line x1="8" y1="2" x2="8" y2="6" />
-                  <line x1="3" y1="10" x2="21" y2="10" />
-                </svg>
-                <h2 className="text-lg font-semibold text-[#0f172b]">
-                  Date & Time
-                </h2>
+                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#2e6b4e]/10">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-[#2e6b4e]"
+                  >
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                    <line x1="16" y1="2" x2="16" y2="6" />
+                    <line x1="8" y1="2" x2="8" y2="6" />
+                    <line x1="3" y1="10" x2="21" y2="10" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-[#0f172b]">
+                    Date & Time
+                  </h2>
+                  <p className="text-xs text-[#64748b]">Single-day or multi-day events supported</p>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {/* Date */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="flex flex-col gap-1.5">
                   <label htmlFor="date" className="text-sm font-medium text-[#314158]">
-                    Date *
+                    Start date *
                   </label>
                   <input
                     type="date"
@@ -678,11 +723,9 @@ function CreateEventPage() {
                     className={inputBase}
                   />
                 </div>
-
-                {/* Start Time */}
                 <div className="flex flex-col gap-1.5">
                   <label htmlFor="startTime" className="text-sm font-medium text-[#314158]">
-                    Start Time *
+                    Start time *
                   </label>
                   <input
                     type="time"
@@ -694,11 +737,24 @@ function CreateEventPage() {
                     className={inputBase}
                   />
                 </div>
-
-                {/* End Time */}
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="endDate" className="text-sm font-medium text-[#314158]">
+                    End date
+                  </label>
+                  <input
+                    type="date"
+                    id="endDate"
+                    name="endDate"
+                    value={formData.endDate}
+                    onChange={handleChange}
+                    min={formData.date || undefined}
+                    className={inputBase}
+                  />
+                  <p className="text-xs text-[#64748b]">Leave blank for same-day events</p>
+                </div>
                 <div className="flex flex-col gap-1.5">
                   <label htmlFor="endTime" className="text-sm font-medium text-[#314158]">
-                    End Time *
+                    End time *
                   </label>
                   <input
                     type="time"
@@ -714,27 +770,21 @@ function CreateEventPage() {
             </div>
 
             {/* Location Section */}
-            <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm p-6 space-y-4">
-              <div className="flex items-center gap-2 mb-4">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-[#2e6b4e]"
-                >
-                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                  <circle cx="12" cy="10" r="3" />
-                </svg>
-                <h2 className="text-lg font-semibold text-[#0f172b]">
-                  Location
-                </h2>
+            <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm overflow-hidden">
+              <div className="px-4 sm:px-6 py-4 border-b border-[#e2e8f0] bg-[#fafbfc]">
+                <div className="flex items-center gap-3">
+                  <div className={sectionIconClass}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold text-[#0f172b]">Location</h2>
+                    <p className="text-xs text-[#64748b]">Venue name and address</p>
+                  </div>
+                </div>
               </div>
+              <div className="p-4 sm:p-6 space-y-4">
 
               {/* Venue Name */}
               <div className="flex flex-col gap-1.5">
@@ -770,14 +820,25 @@ function CreateEventPage() {
                   className={inputBase}
                 />
               </div>
+              </div>
             </div>
 
             {/* Pricing & Capacity Section */}
-            <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm p-6 space-y-4">
-              <h2 className="text-lg font-semibold text-[#0f172b] mb-4">
-                Pricing & Capacity
-              </h2>
-
+            <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm overflow-hidden">
+              <div className="px-4 sm:px-6 py-4 border-b border-[#e2e8f0] bg-[#fafbfc]">
+                <div className="flex items-center gap-3">
+                  <div className={sectionIconClass}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold text-[#0f172b]">Pricing & Capacity</h2>
+                    <p className="text-xs text-[#64748b]">Ticket price and max attendees</p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-4 sm:p-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Ticket Price / Free toggle */}
                 <div className="flex flex-col gap-1.5">
@@ -867,58 +928,61 @@ function CreateEventPage() {
                     placeholder="e.g., 200"
                     className={inputBase}
                   />
-                  <p className="text-xs text-[#62748e]">
+                  <p className="text-xs text-[#64748b]">
                     Maximum number of attendees
                   </p>
                 </div>
               </div>
+              </div>
             </div>
 
             {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-3 pt-4">
-              {isEditMode ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleCancel}
-                    disabled={loading}
-                    className="flex-1 px-6 py-3 bg-white border border-[#cad5e2] text-[#314158] rounded-lg font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDelete}
-                    disabled={loading}
-                    className="px-6 py-3 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Delete
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="flex-1 px-6 py-3 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {loading ? "Saving..." : "Save Changes"}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <Link
-                    to="/dashboard"
-                    className="flex-1 px-6 py-3 bg-white border border-[#cad5e2] text-[#314158] rounded-lg font-medium hover:bg-gray-50 transition-colors text-center"
-                  >
-                    Cancel
-                  </Link>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="flex-1 px-6 py-3 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {loading ? "Creating..." : "Create Event"}
-                  </button>
-                </>
-              )}
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              <div className="flex flex-col sm:flex-row gap-3 flex-1 sm:justify-end rounded-2xl bg-white border border-[#e2e8f0] shadow-sm p-4">
+                {isEditMode ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleCancel}
+                      disabled={loading}
+                      className="order-2 sm:order-1 px-6 py-3 bg-white border border-[#cad5e2] text-[#314158] rounded-xl font-medium hover:bg-[#f8fafc] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDelete}
+                      disabled={loading}
+                      className="order-3 px-6 py-3 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="order-1 sm:order-3 flex-1 sm:flex-none px-6 py-3 bg-[#2e6b4e] text-white rounded-xl font-medium hover:bg-[#255a43] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                    >
+                      {loading ? "Saving..." : "Save Changes"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      to="/dashboard"
+                      className="order-2 px-6 py-3 bg-white border border-[#cad5e2] text-[#314158] rounded-xl font-medium hover:bg-[#f8fafc] transition-colors text-center"
+                    >
+                      Cancel
+                    </Link>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="order-1 flex-1 sm:flex-none px-6 py-3 bg-[#2e6b4e] text-white rounded-xl font-medium hover:bg-[#255a43] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                    >
+                      {loading ? "Creating..." : "Create Event"}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </form>
         </div>

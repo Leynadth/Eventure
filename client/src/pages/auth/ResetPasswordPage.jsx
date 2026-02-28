@@ -126,8 +126,8 @@ function ResetPasswordPage() {
   const inputBase = "h-[50px] w-full rounded-lg border border-[#cad5e2] pl-10 pr-12 text-base placeholder:text-[rgba(10,10,10,0.5)] focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent";
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-5 font-[Arimo,sans-serif]">
-      <div className="w-full max-w-[480px] bg-white border border-[#e2e8f0] rounded-2xl shadow-[0px_10px_15px_-3px_rgba(0,0,0,0.1),0px_4px_6px_-4px_rgba(0,0,0,0.1)] p-8 flex flex-col gap-6">
+    <div className="min-h-[100dvh] sm:min-h-screen flex items-center justify-center bg-gray-50 p-4 sm:p-5 py-8 font-[Arimo,sans-serif]">
+      <div className="w-full max-w-[480px] min-w-0 bg-white border border-[#e2e8f0] rounded-2xl shadow-[0px_10px_15px_-3px_rgba(0,0,0,0.1),0px_4px_6px_-4px_rgba(0,0,0,0.1)] p-6 sm:p-8 flex flex-col gap-6">
         {/* Brand row: logo */}
         <div className="flex items-center justify-center">
           <img 

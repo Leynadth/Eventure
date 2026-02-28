@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getUserRole } from "../../utils/auth";
+import { useUserRole } from "../../contexts/AuthContext";
 import AppShell from "../../components/layout/AppShell";
 import EventCard from "../../components/events/EventCard";
 import { getEvents, getMyEvents, getCategories } from "../../api";
@@ -47,7 +47,7 @@ function buildFullAddress(event) {
 }
 
 function DashboardPage() {
-  const role = getUserRole();
+  const role = useUserRole();
   const [events, setEvents] = useState([]);
   const [myEvents, setMyEvents] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -95,10 +95,10 @@ function DashboardPage() {
 
   return (
     <AppShell>
-      <div className="space-y-8">
+      <div className="space-y-6 sm:space-y-8">
         {/* Welcome Section */}
         <div>
-          <h1 className="text-3xl font-bold text-[#0f172b] mb-2">
+          <h1 className="text-2xl sm:text-3xl font-bold text-[#0f172b] mb-2">
             Welcome back!
           </h1>
           <p className="text-[#45556c]">

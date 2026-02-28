@@ -107,7 +107,7 @@ export default function OrganizerEventAnalyticsPage() {
   return (
     <AppShell>
       <div className="min-h-screen bg-[#f8fafc]">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
           {/* Breadcrumb / back */}
           <div className="mb-6">
             <Link
@@ -122,9 +122,9 @@ export default function OrganizerEventAnalyticsPage() {
           </div>
 
           {/* Event summary card */}
-          <div className="bg-white rounded-2xl shadow-sm border border-[#e2e8f0] overflow-hidden mb-8">
-            <div className="p-6 border-b border-[#e2e8f0]">
-              <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="bg-white rounded-2xl shadow-sm border border-[#e2e8f0] overflow-hidden mb-6 sm:mb-8">
+            <div className="p-4 sm:p-6 border-b border-[#e2e8f0]">
+              <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-start justify-between gap-4">
                 <div>
                   {event.category && (
                     <span className="inline-block px-2 py-1 bg-[#2e6b4e]/10 text-[#2e6b4e] text-xs font-medium rounded mb-2">
@@ -209,7 +209,7 @@ export default function OrganizerEventAnalyticsPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left">
+                <table className="w-full text-left min-w-[500px]">
                   <thead>
                     <tr className="border-b border-[#e2e8f0] bg-[#f8fafc]/60">
                       <th className="px-6 py-3 text-xs font-medium text-[#64748b] uppercase tracking-wide">#</th>

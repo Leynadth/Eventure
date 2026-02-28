@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { getEvents, getCategories, getLocationFromCoords, checkFavorite, addFavorite, removeFavorite, checkRSVPStatus } from "../../api";
 import EventCard from "../../components/events/EventCard";
+import { useNotification } from "../../contexts/NotificationContext";
 
 const RADIUS_OPTIONS = [5, 10, 15, 20, 25, 30, 40, 50];
 
@@ -90,6 +91,7 @@ function getImageUrl(imagePath) {
 function BrowseEventsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { toast } = useNotification();
   const [searchQuery, setSearchQuery] = useState("");
   const [zipCode, setZipCode] = useState("");
   const [radius, setRadius] = useState(10); // Default 10 miles
@@ -373,7 +375,7 @@ function BrowseEventsPage() {
     // Check if user is authenticated
     const token = localStorage.getItem("eventure_token");
     if (!token) {
-      alert("Please log in to favorite events");
+      toast("Please log in to favorite events", "info");
       return;
     }
 
@@ -390,7 +392,7 @@ function BrowseEventsPage() {
       }));
     } catch (err) {
       console.error("Failed to update favorite:", err);
-      alert(err.message || "Failed to update favorite. Please try again.");
+      toast(err.message || "Failed to update favorite. Please try again.", "error");
       // Revert the change on error
       setFavoritesMap((prev) => ({
         ...prev,
@@ -411,9 +413,9 @@ function BrowseEventsPage() {
 
   return (
     <div className="min-h-screen bg-[#f8fafc]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         {/* Header */}
-        <div className="mb-8 flex gap-4">
+        <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row gap-3 sm:gap-4">
           <div className="w-1 rounded-full bg-[#2e6b4e] shrink-0" aria-hidden />
           <div>
             <h1 className="text-3xl sm:text-4xl font-bold text-[#0f172b] mb-1.5">Browse Events</h1>

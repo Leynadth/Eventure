@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { getCurrentUser } from "../../utils/auth";
-import { getAdminStats, getAllEvents, approveEvent, declineEvent, adminDeleteEvent, getAllUsers, getUserDetails, deleteUser, unattendUserFromEvent, getAnalytics, getHeroSettings, updateHeroSettings, uploadHeroImage, uploadFoundersImage, getContentSettings, updateContentSettings, getAdminCategories, addAdminCategory, updateAdminCategory, deleteAdminCategory, backfillEventCoordinates, getImageUrl } from "../../api";
+import { useCurrentUser } from "../../contexts/AuthContext";
+import { useNotification } from "../../contexts/NotificationContext";
+import { getAdminStats, getAllEvents, getAdminEventDetails, adminDeleteEvent, getAllUsers, getUserDetails, deleteUser, updateUserRole, unattendUserFromEvent, getAnalytics, getHeroSettings, updateHeroSettings, uploadHeroImage, getContentSettings, updateContentSettings, getImageUrl, getOrganizerSignups, updateOrganizerSignup } from "../../api";
 
 function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -27,6 +28,7 @@ function AdminDashboardPage() {
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [userRoleUpdatingId, setUserRoleUpdatingId] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
   const [userDetails, setUserDetails] = useState(null);
   const [userDetailsLoading, setUserDetailsLoading] = useState(false);
@@ -38,113 +40,26 @@ function AdminDashboardPage() {
   const [content, setContent] = useState({
     home_hero_headline: "",
     home_hero_subheadline: "",
-    home_about_title: "",
-    home_about_body: "",
     home_most_attended_title: "",
-    home_founders_image: "",
   });
-  const [adminCategories, setAdminCategories] = useState([]);
   const [customizeLoading, setCustomizeLoading] = useState(false);
   const [customizeSaving, setCustomizeSaving] = useState(false);
   const [heroSaveStatus, setHeroSaveStatus] = useState(null); // 'success' | 'error' | null
   const [heroSaveMessage, setHeroSaveMessage] = useState("");
-  const [newCategoryName, setNewCategoryName] = useState("");
-  const [editingCategoryId, setEditingCategoryId] = useState(null);
-  const [editingCategoryName, setEditingCategoryName] = useState("");
   const hasLoadedRef = useRef(false);
-  const [exportLoading, setExportLoading] = useState(false);
-  const [backfillLoading, setBackfillLoading] = useState(false);
-  const [backfillResult, setBackfillResult] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [selectedEventId, setSelectedEventId] = useState(null);
+  const [eventDetails, setEventDetails] = useState(null);
+  const [eventDetailsLoading, setEventDetailsLoading] = useState(false);
+  const [organizerSignups, setOrganizerSignups] = useState([]);
+  const [organizerSignupsLoading, setOrganizerSignupsLoading] = useState(false);
+  const [organizerSignupActionId, setOrganizerSignupActionId] = useState(null);
+  const [unattendModal, setUnattendModal] = useState({ open: false, eventId: null, eventTitle: null });
+  const [unattendReason, setUnattendReason] = useState("");
+  const [unattendSubmitting, setUnattendSubmitting] = useState(false);
 
-  // Build CSV and trigger download: eventure_anal_YYYY-MM-DD.csv
-  const handleExportData = useCallback(async () => {
-    setExportLoading(true);
-    try {
-      const data = analytics ? { ...analytics } : await getAnalytics();
-      if (!data) {
-        alert("No analytics data available to export.");
-        return;
-      }
-      const dateStr = new Date().toISOString().slice(0, 10);
-      const rows = [];
-
-      rows.push("Eventure Analytics Export");
-      rows.push(`Exported,${dateStr}`);
-      rows.push("");
-
-      const escapeCsv = (v) => {
-        const s = String(v ?? "");
-        if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
-        return s;
-      };
-
-      if (data.thisMonth != null && data.currentMonthLabel) {
-        rows.push(`Section,This month (${escapeCsv(data.currentMonthLabel)})`);
-        rows.push("Metric,Value");
-        rows.push(`New Users,${escapeCsv(data.thisMonth.users)}`);
-        rows.push(`Events Created,${escapeCsv(data.thisMonth.events)}`);
-        rows.push(`RSVPs (going),${escapeCsv(data.thisMonth.rsvps)}`);
-        rows.push("");
-      }
-
-      if (data.totals) {
-        rows.push("Section,Totals");
-        rows.push("Metric,Value");
-        rows.push(`Total Users,${escapeCsv(data.totals.totalUsers)}`);
-        rows.push(`Total Events,${escapeCsv(data.totals.totalEvents)}`);
-        rows.push(`Approved Events,${escapeCsv(data.totals.approvedEvents)}`);
-        rows.push(`Total RSVPs,${escapeCsv(data.totals.totalRsvps)}`);
-        rows.push("");
-      }
-
-      if (data.eventsOverTime?.length) {
-        rows.push("Section,Events Over Time");
-        rows.push("Month,Count");
-        data.eventsOverTime.forEach((r) => rows.push(`${escapeCsv(r.month)},${escapeCsv(r.count)}`));
-        rows.push("");
-      }
-      if (data.usersOverTime?.length) {
-        rows.push("Section,Users Over Time");
-        rows.push("Month,Count");
-        data.usersOverTime.forEach((r) => rows.push(`${escapeCsv(r.month)},${escapeCsv(r.count)}`));
-        rows.push("");
-      }
-      if (data.rsvpsOverTime?.length) {
-        rows.push("Section,RSVPs Over Time");
-        rows.push("Month,Count");
-        data.rsvpsOverTime.forEach((r) => rows.push(`${escapeCsv(r.month)},${escapeCsv(r.count)}`));
-        rows.push("");
-      }
-      if (data.eventsByCategory?.length) {
-        rows.push("Section,Events by Category");
-        rows.push("Category,Count");
-        data.eventsByCategory.forEach((r) => rows.push(`${escapeCsv(r.category)},${escapeCsv(r.count)}`));
-        rows.push("");
-      }
-      if (data.eventsByStatus?.length) {
-        rows.push("Section,Events by Status");
-        rows.push("Status,Count");
-        data.eventsByStatus.forEach((r) => rows.push(`${escapeCsv(r.status)},${escapeCsv(r.count)}`));
-      }
-
-      const csv = rows.join("\r\n");
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `eventure_anal_${dateStr}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("Export failed:", err);
-      alert(err.message || "Failed to export analytics data.");
-    } finally {
-      setExportLoading(false);
-    }
-  }, [analytics]);
-
-  // Memoize user to prevent unnecessary re-renders - only parse once
-  const user = useMemo(() => getCurrentUser(), []);
+  const user = useCurrentUser();
+  const { toast, confirm } = useNotification();
 
   // Memoize loadData to prevent recreation on every render
   const loadData = useCallback(async () => {
@@ -201,7 +116,7 @@ function AdminDashboardPage() {
         setEvents(Array.isArray(eventsData) ? eventsData : []);
       } catch (eventsErr) {
         console.error("Failed to load events:", eventsErr);
-        alert(`Failed to load events: ${eventsErr.message || "Unknown error"}`);
+        toast(`Failed to load events: ${eventsErr.message || "Unknown error"}`, "error");
         setEvents([]);
       }
     } catch (err) {
@@ -242,42 +157,16 @@ function AdminDashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, loadData]);
 
-  const handleApprove = async (eventId) => {
-    if (!window.confirm("Are you sure you want to approve this event?")) return;
-    try {
-      console.log("Approving event:", eventId);
-      await approveEvent(eventId);
-      alert("Event approved successfully!");
-      await loadData(); // Reload data
-    } catch (err) {
-      console.error("Failed to approve event:", err);
-      alert(err.message || "Failed to approve event");
-    }
-  };
-
-  const handleDecline = async (eventId) => {
-    if (!window.confirm("Are you sure you want to decline this event?")) return;
-    try {
-      console.log("Declining event:", eventId);
-      await declineEvent(eventId);
-      alert("Event declined successfully!");
-      await loadData(); // Reload data
-    } catch (err) {
-      console.error("Failed to decline event:", err);
-      alert(err.message || "Failed to decline event");
-    }
-  };
-
   const handleDelete = async (eventId) => {
-    if (!window.confirm("Are you sure you want to delete this event? This action cannot be undone.")) return;
+    const ok = await confirm({ title: "Delete event", message: "Are you sure you want to delete this event? This action cannot be undone.", confirmLabel: "Delete", cancelLabel: "Cancel", variant: "danger" });
+    if (!ok) return;
     try {
-      console.log("Deleting event:", eventId);
       await adminDeleteEvent(eventId);
-      alert("Event deleted successfully!");
-      await loadData(); // Reload data
+      toast("Event deleted successfully!", "success");
+      await loadData();
     } catch (err) {
       console.error("Failed to delete event:", err);
-      alert(err.message || "Failed to delete event");
+      toast(err.message || "Failed to delete event", "error");
     }
   };
 
@@ -288,10 +177,23 @@ function AdminDashboardPage() {
       setUsers(Array.isArray(usersData) ? usersData : []);
     } catch (err) {
       console.error("Failed to load users:", err);
-      alert(`Failed to load users: ${err.message || "Unknown error"}`);
+      toast(`Failed to load users: ${err.message || "Unknown error"}`, "error");
       setUsers([]);
     } finally {
       setUsersLoading(false);
+    }
+  }, []);
+
+  const loadOrganizerSignups = useCallback(async () => {
+    try {
+      setOrganizerSignupsLoading(true);
+      const data = await getOrganizerSignups();
+      setOrganizerSignups(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to load organizer signups:", err);
+      setOrganizerSignups([]);
+    } finally {
+      setOrganizerSignupsLoading(false);
     }
   }, []);
 
@@ -304,7 +206,7 @@ function AdminDashboardPage() {
       setDeleteConfirmText("");
     } catch (err) {
       console.error("Failed to load user details:", err);
-      alert(err.message || "Failed to load user details");
+      toast(err.message || "Failed to load user details", "error");
     } finally {
       setUserDetailsLoading(false);
     }
@@ -314,23 +216,28 @@ function AdminDashboardPage() {
     if (!selectedUser || !userDetails) return;
     
     if (userDetails.user.role === "admin") {
-      alert("Cannot delete admin users");
+      toast("Cannot delete admin users", "error");
       return;
     }
 
     if (deleteConfirmText.toLowerCase() !== "confirm") {
-      alert('Please type "confirm" to delete this user');
+      toast('Please type "confirm" to delete this user', "error");
       return;
     }
 
-    if (!window.confirm(`Are you absolutely sure you want to delete ${userDetails.user.firstName} ${userDetails.user.lastName}? This will permanently delete their account and all associated events. This action cannot be undone.`)) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Delete user",
+      message: `Are you absolutely sure you want to delete ${userDetails.user.firstName} ${userDetails.user.lastName}? This will permanently delete their account and all associated events. This action cannot be undone.`,
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
+      variant: "danger",
+    });
+    if (!ok) return;
 
     try {
       setIsDeleting(true);
       await deleteUser(selectedUser);
-      alert("User deleted successfully!");
+      toast("User deleted successfully!", "success");
       setSelectedUser(null);
       setUserDetails(null);
       setDeleteConfirmText("");
@@ -338,46 +245,54 @@ function AdminDashboardPage() {
       await loadData(); // Reload stats
     } catch (err) {
       console.error("Failed to delete user:", err);
-      alert(err.message || "Failed to delete user");
+      toast(err.message || "Failed to delete user", "error");
     } finally {
       setIsDeleting(false);
     }
   };
 
-  const handleUnattendUser = async (eventId) => {
-    if (!selectedUser || !userDetails) return;
-    
-    if (!window.confirm("Are you sure you want to unattend this user from this event?")) {
+  const openUnattendModal = (eventId, eventTitle) => {
+    setUnattendModal({ open: true, eventId, eventTitle });
+    setUnattendReason("");
+  };
+
+  const closeUnattendModal = () => {
+    setUnattendModal({ open: false, eventId: null, eventTitle: null });
+    setUnattendReason("");
+  };
+
+  const handleUnattendUser = async () => {
+    if (!selectedUser || !unattendModal.eventId) return;
+    const reason = unattendReason.trim();
+    if (!reason) {
+      toast("Please provide a reason for unattending this user.", "error");
       return;
     }
-
+    setUnattendSubmitting(true);
     try {
-      await unattendUserFromEvent(selectedUser, eventId);
-      alert("User unattended successfully!");
-      // Reload user details
+      await unattendUserFromEvent(selectedUser, unattendModal.eventId, reason);
+      toast("User unattended successfully!", "success");
+      closeUnattendModal();
       await handleUserClick(selectedUser);
     } catch (err) {
       console.error("Failed to unattend user:", err);
-      alert(err.message || "Failed to unattend user");
+      toast(err.message || "Failed to unattend user", "error");
+    } finally {
+      setUnattendSubmitting(false);
     }
   };
 
   const handleDeleteEventFromUser = async (eventId) => {
-    if (!window.confirm("Are you sure you want to delete this event? This action cannot be undone.")) {
-      return;
-    }
-
+    const ok = await confirm({ title: "Delete event", message: "Are you sure you want to delete this event? This action cannot be undone.", confirmLabel: "Delete", cancelLabel: "Cancel", variant: "danger" });
+    if (!ok) return;
     try {
       await adminDeleteEvent(eventId);
-      alert("Event deleted successfully!");
-      // Reload user details
-      if (selectedUser) {
-        await handleUserClick(selectedUser);
-      }
-      await loadData(); // Reload stats
+      toast("Event deleted successfully!", "success");
+      if (selectedUser) await handleUserClick(selectedUser);
+      await loadData();
     } catch (err) {
       console.error("Failed to delete event:", err);
-      alert(err.message || "Failed to delete event");
+      toast(err.message || "Failed to delete event", "error");
     }
   };
 
@@ -386,7 +301,10 @@ function AdminDashboardPage() {
     if (activeTab === "users") {
       loadUsers();
     }
-  }, [activeTab, loadUsers]);
+    if (activeTab === "organizer-signups") {
+      loadOrganizerSignups();
+    }
+  }, [activeTab, loadUsers, loadOrganizerSignups]);
 
   // Load analytics when analytics tab is active
   const loadAnalytics = useCallback(async () => {
@@ -396,7 +314,7 @@ function AdminDashboardPage() {
       setAnalytics(analyticsData);
     } catch (err) {
       console.error("Failed to load analytics:", err);
-      alert(`Failed to load analytics: ${err.message || "Unknown error"}`);
+      toast(`Failed to load analytics: ${err.message || "Unknown error"}`, "error");
       setAnalytics(null);
     } finally {
       setAnalyticsLoading(false);
@@ -413,24 +331,21 @@ function AdminDashboardPage() {
   const loadCustomizeData = useCallback(async () => {
     try {
       setCustomizeLoading(true);
-      const [heroData, contentData, categoriesData] = await Promise.all([
+      setHeroSaveStatus(null);
+      setHeroSaveMessage("");
+      const [heroData, contentData] = await Promise.all([
         getHeroSettings(),
         getContentSettings(),
-        getAdminCategories(),
       ]);
       setHero(heroData || { type: "color", color: "#2e6b4e", image: null });
       setContent(contentData || {
         home_hero_headline: "",
         home_hero_subheadline: "",
-        home_about_title: "",
-        home_about_body: "",
         home_most_attended_title: "",
-        home_founders_image: "",
       });
-      setAdminCategories(Array.isArray(categoriesData) ? categoriesData : []);
     } catch (err) {
       console.error("Failed to load customize data:", err);
-      alert("Failed to load site settings");
+      toast("Failed to load site settings", "error");
     } finally {
       setCustomizeLoading(false);
     }
@@ -499,73 +414,11 @@ function AdminDashboardPage() {
     try {
       setCustomizeSaving(true);
       await updateContentSettings(content);
-      alert("Content saved!");
+      toast("Content saved!", "success");
     } catch (err) {
-      alert(err.message || "Failed to save content");
+      toast(err.message || "Failed to save content", "error");
     } finally {
       setCustomizeSaving(false);
-    }
-  };
-
-  const handleAddCategory = async () => {
-    const name = newCategoryName.trim();
-    if (!name) return;
-    try {
-      setCustomizeSaving(true);
-      const added = await addAdminCategory(name);
-      setAdminCategories((prev) => [...prev, { id: added.id, name: added.name, sort_order: added.sort_order ?? 0 }]);
-      setNewCategoryName("");
-      alert("Category added!");
-    } catch (err) {
-      alert(err.message || "Failed to add category");
-    } finally {
-      setCustomizeSaving(false);
-    }
-  };
-
-  const handleUpdateCategory = async (id) => {
-    const name = editingCategoryName.trim();
-    if (!name) return;
-    try {
-      setCustomizeSaving(true);
-      await updateAdminCategory(id, name);
-      setAdminCategories((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
-      setEditingCategoryId(null);
-      setEditingCategoryName("");
-      alert("Category updated!");
-    } catch (err) {
-      alert(err.message || "Failed to update category");
-    } finally {
-      setCustomizeSaving(false);
-    }
-  };
-
-  const handleDeleteCategory = async (id) => {
-    if (!window.confirm("Delete this category? Events with this category will keep it in their data.")) return;
-    try {
-      setCustomizeSaving(true);
-      await deleteAdminCategory(id);
-      setAdminCategories((prev) => prev.filter((c) => c.id !== id));
-      alert("Category deleted!");
-    } catch (err) {
-      alert(err.message || "Failed to delete category");
-    } finally {
-      setCustomizeSaving(false);
-    }
-  };
-
-  const handleBackfillCoordinates = async () => {
-    if (!window.confirm("Geocode and save lat/lng for all events that are missing coordinates? This may take a minute (1 request per second).")) return;
-    try {
-      setBackfillLoading(true);
-      setBackfillResult(null);
-      const res = await backfillEventCoordinates();
-      setBackfillResult(res);
-      alert(`Done. Updated: ${res.updated}, Failed: ${res.failed}, Total processed: ${res.total}`);
-    } catch (err) {
-      alert(err.message || "Backfill failed");
-    } finally {
-      setBackfillLoading(false);
     }
   };
 
@@ -577,6 +430,53 @@ function AdminDashboardPage() {
       day: "numeric",
       year: "numeric",
     });
+  };
+
+  const formatDateTime = (dateString) => {
+    if (!dateString) return "—";
+    const date = new Date(dateString);
+    return date.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
+
+  const openEventDetail = async (eventId) => {
+    setSelectedEventId(eventId);
+    setEventDetails(null);
+    setEventDetailsLoading(true);
+    try {
+      const data = await getAdminEventDetails(eventId);
+      setEventDetails(data);
+    } catch (err) {
+      console.error("Failed to load event details:", err);
+      toast(err.message || "Failed to load event details", "error");
+      setSelectedEventId(null);
+    } finally {
+      setEventDetailsLoading(false);
+    }
+  };
+
+  const closeEventDetail = () => {
+    setSelectedEventId(null);
+    setEventDetails(null);
+  };
+
+  const handleDeleteEventAndClose = async (eventId) => {
+    const ok = await confirm({ title: "Delete event", message: "Are you sure you want to delete this event? This action cannot be undone.", confirmLabel: "Delete", cancelLabel: "Cancel", variant: "danger" });
+    if (!ok) return;
+    try {
+      await adminDeleteEvent(eventId);
+      toast("Event deleted successfully!", "success");
+      closeEventDetail();
+      await loadData();
+    } catch (err) {
+      console.error("Failed to delete event:", err);
+      toast(err.message || "Failed to delete event", "error");
+    }
   };
 
   const getCategoryColor = (category) => {
@@ -609,10 +509,10 @@ function AdminDashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center" style={{ backgroundColor: '#f9fafb', minHeight: '100vh' }}>
+      <div className="flex-1 flex items-center justify-center bg-[#f8fafc]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-2"></div>
-          <p className="text-gray-600">Loading admin dashboard...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#2e6b4e] border-t-transparent mx-auto mb-4" />
+          <p className="text-[#64748b] font-medium">Loading admin dashboard…</p>
         </div>
       </div>
     );
@@ -620,12 +520,12 @@ function AdminDashboardPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center" style={{ backgroundColor: '#f9fafb', minHeight: '100vh' }}>
+      <div className="flex-1 flex items-center justify-center bg-[#f8fafc]">
         <div className="text-center">
           <p className="text-red-600 mb-4">Error: {error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-gray-900 text-white rounded-lg"
+            className="px-4 py-2 bg-[#2e6b4e] text-white rounded-lg hover:bg-[#255a43] transition-colors"
           >
             Reload Page
           </button>
@@ -635,23 +535,77 @@ function AdminDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex" style={{ backgroundColor: '#f9fafb', minHeight: '100vh' }}>
-      {/* Sidebar */}
-      <div className="w-64 bg-gray-100 border-r border-gray-200 flex flex-col" style={{ backgroundColor: '#f3f4f6' }}>
+    <div className="flex-1 flex flex-col lg:flex-row bg-[#f8fafc] min-h-0">
+      {/* Mobile: menu button + title bar */}
+      <div className="lg:hidden flex items-center justify-between gap-4 p-4 bg-white border-b border-[#e2e8f0] shrink-0">
+        <button
+          type="button"
+          onClick={() => setSidebarOpen((o) => !o)}
+          className="p-2 rounded-lg text-[#475569] hover:bg-[#f1f5f9] hover:text-[#2e6b4e] transition-colors"
+          aria-label="Toggle admin menu"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-lg font-bold text-[#0f172b] truncate">Admin Dashboard</h1>
+          <p className="text-xs text-[#64748b] truncate">Manage events, users, analytics</p>
+        </div>
+        <Link
+          to="/"
+          className="p-2 rounded-lg text-[#475569] hover:bg-[#f1f5f9] hover:text-[#2e6b4e] transition-colors shrink-0"
+          aria-label="Back to site"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </Link>
+      </div>
+
+      {/* Mobile overlay when sidebar open */}
+      {sidebarOpen && (
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(false)}
+          className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          aria-label="Close menu"
+        />
+      )}
+
+      {/* Sidebar: drawer on mobile, fixed on desktop */}
+      <div
+        className={`
+          w-64 bg-white border-r border-[#e2e8f0] flex flex-col shrink-0 shadow-sm
+          fixed lg:relative inset-y-0 left-0 z-50 lg:z-auto
+          transform transition-transform duration-200 ease-out
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+        `}
+        style={{ top: 0 }}
+      >
         {/* Sidebar Header */}
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-800">Admin Panel</h2>
+        <div className="p-4 lg:p-6 border-b border-[#e2e8f0] flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-[#0f172b]">Admin</h2>
+            <p className="text-xs text-[#64748b] mt-0.5">Dashboard</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden p-2 rounded-lg text-[#475569] hover:bg-[#f1f5f9]"
+            aria-label="Close menu"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-4">
-          <div className="space-y-2">
+        <nav className="flex-1 p-4 overflow-auto">
+          <div className="space-y-1">
             <button
-              onClick={() => setActiveTab("events")}
+              onClick={() => { setActiveTab("events"); setSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
                 activeTab === "events"
-                  ? "bg-green-50 text-green-700 font-medium"
-                  : "text-gray-700 hover:bg-gray-200"
+                  ? "bg-[#2e6b4e]/10 text-[#2e6b4e] font-medium"
+                  : "text-[#475569] hover:bg-[#f1f5f9] hover:text-[#2e6b4e]"
               }`}
             >
               <svg
@@ -673,11 +627,11 @@ function AdminDashboardPage() {
               Events
             </button>
             <button
-              onClick={() => setActiveTab("users")}
+              onClick={() => { setActiveTab("users"); setSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
                 activeTab === "users"
-                  ? "bg-green-50 text-green-700 font-medium"
-                  : "text-gray-700 hover:bg-gray-200"
+                  ? "bg-[#2e6b4e]/10 text-[#2e6b4e] font-medium"
+                  : "text-[#475569] hover:bg-[#f1f5f9] hover:text-[#2e6b4e]"
               }`}
             >
               <svg
@@ -699,11 +653,44 @@ function AdminDashboardPage() {
               Users
             </button>
             <button
-              onClick={() => setActiveTab("analytics")}
+              onClick={() => { setActiveTab("organizer-signups"); setSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
+                activeTab === "organizer-signups"
+                  ? "bg-[#2e6b4e]/10 text-[#2e6b4e] font-medium"
+                  : "text-[#475569] hover:bg-[#f1f5f9] hover:text-[#2e6b4e]"
+              }`}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                <path d="M12 11v6" />
+                <path d="M9 14h6" />
+              </svg>
+              Organizer Signups
+              {organizerSignups.filter((s) => s.status === "pending").length > 0 && (
+                <span className="ml-auto bg-[#2e6b4e] text-white text-xs font-medium px-2 py-0.5 rounded-full">
+                  {organizerSignups.filter((s) => s.status === "pending").length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => { setActiveTab("analytics"); setSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
                 activeTab === "analytics"
-                  ? "bg-green-50 text-green-700 font-medium"
-                  : "text-gray-700 hover:bg-gray-200"
+                  ? "bg-[#2e6b4e]/10 text-[#2e6b4e] font-medium"
+                  : "text-[#475569] hover:bg-[#f1f5f9] hover:text-[#2e6b4e]"
               }`}
             >
               <svg
@@ -724,11 +711,11 @@ function AdminDashboardPage() {
               Analytics
             </button>
             <button
-              onClick={() => setActiveTab("customize")}
+              onClick={() => { setActiveTab("customize"); setSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
                 activeTab === "customize"
-                  ? "bg-green-50 text-green-700 font-medium"
-                  : "text-gray-700 hover:bg-gray-200"
+                  ? "bg-[#2e6b4e]/10 text-[#2e6b4e] font-medium"
+                  : "text-[#475569] hover:bg-[#f1f5f9] hover:text-[#2e6b4e]"
               }`}
             >
               <svg
@@ -751,10 +738,10 @@ function AdminDashboardPage() {
         </nav>
 
         {/* Back to Site */}
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-4 border-t border-[#e2e8f0]">
           <Link
             to="/"
-            className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-200 transition-colors"
+            className="flex items-center gap-3 px-4 py-3 rounded-lg text-[#475569] hover:bg-[#f1f5f9] hover:text-[#2e6b4e] transition-colors text-sm font-medium"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -778,26 +765,12 @@ function AdminDashboardPage() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-auto" style={{ backgroundColor: '#f9fafb' }}>
-        <div className="max-w-7xl mx-auto p-8">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
-              <p className="text-gray-600">Manage events, users, and platform analytics</p>
-            </div>
-            <div className="flex items-center gap-4">
-              <button
-                onClick={handleExportData}
-                disabled={exportLoading}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {exportLoading ? "Exporting…" : "Export Data"}
-              </button>
-              <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-semibold">
-                {user?.firstName?.[0]?.toUpperCase() || "A"}
-              </div>
-            </div>
+      <div className="flex-1 overflow-auto bg-[#f8fafc] min-w-0">
+        <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+          {/* Page title - hidden on mobile (shown in top bar) */}
+          <div className="hidden lg:block mb-6 lg:mb-8">
+            <h1 className="text-2xl sm:text-3xl font-bold text-[#0f172b] mb-1">Admin Dashboard</h1>
+            <p className="text-[#64748b] text-sm sm:text-base">Manage events, users, and platform analytics</p>
           </div>
 
           {/* Stats Cards */}
@@ -904,37 +877,6 @@ function AdminDashboardPage() {
               </p>
             </div>
 
-            {/* Pending Approval - clickable to open Events tab with Pending filter */}
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab("events");
-                setEventStatusFilter("pending");
-              }}
-              className="w-full bg-white rounded-xl shadow-sm p-6 border border-gray-200 text-left hover:border-orange-300 hover:shadow-md transition-all"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-gray-600">Pending Approval</h3>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-gray-400"
-                >
-                  <circle cx="12" cy="12" r="10" />
-                  <polyline points="12 6 12 12 16 14" />
-                </svg>
-              </div>
-              <p className="text-3xl font-bold text-gray-900 mb-2">{stats.pendingApprovals}</p>
-              <p className="text-sm text-red-600">Requires attention — click to review</p>
-            </button>
-
             {/* Popular Category */}
             <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
               <div className="flex items-center justify-between mb-4">
@@ -994,11 +936,6 @@ function AdminDashboardPage() {
                       }`}
                     >
                       {status === "all" ? "All" : status.charAt(0).toUpperCase() + status.slice(1)}
-                      {status === "pending" && stats.pendingApprovals > 0 && (
-                        <span className="ml-1.5 bg-white/90 text-[#2e6b4e] px-1.5 py-0.5 rounded text-xs">
-                          {stats.pendingApprovals}
-                        </span>
-                      )}
                     </button>
                   ))}
                 </div>
@@ -1075,7 +1012,7 @@ function AdminDashboardPage() {
                         : "No events found"}
                     </div>
                   ) : (
-                    <table className="w-full">
+                    <table className="w-full min-w-[600px]">
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1100,7 +1037,11 @@ function AdminDashboardPage() {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {filteredEvents.map((event) => (
-                        <tr key={event.id} className="hover:bg-gray-50">
+                        <tr
+                          key={event.id}
+                          className="hover:bg-gray-50 cursor-pointer"
+                          onClick={() => openEventDetail(event.id)}
+                        >
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm font-medium text-gray-900">{event.title}</div>
                             <div className="text-sm text-gray-500">
@@ -1131,51 +1072,8 @@ function AdminDashboardPage() {
                               {event.status}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center gap-2">
-                              {event.status === "pending" && (
-                                <>
-                                  <button
-                                    onClick={() => handleApprove(event.id)}
-                                    className="text-green-600 hover:text-green-900"
-                                    title="Approve"
-                                  >
-                                    <svg
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      width="18"
-                                      height="18"
-                                      viewBox="0 0 24 24"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    >
-                                      <polyline points="20 6 9 17 4 12" />
-                                    </svg>
-                                  </button>
-                                  <button
-                                    onClick={() => handleDecline(event.id)}
-                                    className="text-red-600 hover:text-red-900"
-                                    title="Decline"
-                                  >
-                                    <svg
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      width="18"
-                                      height="18"
-                                      viewBox="0 0 24 24"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    >
-                                      <line x1="18" y1="6" x2="6" y2="18" />
-                                      <line x1="6" y1="6" x2="18" y2="18" />
-                                    </svg>
-                                  </button>
-                                </>
-                              )}
                               <button
                                 onClick={() => handleDelete(event.id)}
                                 className="text-gray-600 hover:text-red-600"
@@ -1292,7 +1190,7 @@ function AdminDashboardPage() {
                       {userSearchQuery ? `No users found matching "${userSearchQuery}"` : "No users found"}
                     </div>
                   ) : (
-                    <table className="w-full">
+                    <table className="w-full min-w-[500px]">
                       <thead className="bg-gray-50">
                         <tr>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1346,6 +1244,112 @@ function AdminDashboardPage() {
                     </table>
                   );
                 })()}
+              </div>
+            </div>
+          )}
+
+          {/* Organizer Signups Section */}
+          {activeTab === "organizer-signups" && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div>
+                    <h2 className="text-xl font-semibold text-gray-900 mb-1">Organizer Signups</h2>
+                    <p className="text-sm text-gray-600">Review applications from users who want to host events</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => loadOrganizerSignups()}
+                    disabled={organizerSignupsLoading}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+                    Refresh
+                  </button>
+                </div>
+              </div>
+              <div className="divide-y divide-gray-200">
+                {organizerSignupsLoading ? (
+                  <div className="p-8 text-center text-gray-600">Loading signups...</div>
+                ) : organizerSignups.length === 0 ? (
+                  <div className="p-8 text-center text-gray-600">No organizer signups yet</div>
+                ) : (
+                  organizerSignups.map((signup) => (
+                    <div key={signup.id} className="p-6">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <span className="font-semibold text-gray-900">
+                              {signup.user?.firstName} {signup.user?.lastName}
+                            </span>
+                            <span className="text-sm text-gray-500">({signup.user?.email})</span>
+                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                              signup.status === "pending" ? "bg-amber-100 text-amber-800" :
+                              signup.status === "approved" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
+                            }`}>
+                              {signup.status}
+                            </span>
+                          </div>
+                          {signup.organizationName && (
+                            <p className="text-sm text-gray-600 mb-1"><span className="font-medium text-gray-700">Organization:</span> {signup.organizationName}</p>
+                          )}
+                          {signup.eventTypes && (
+                            <p className="text-sm text-gray-600 mb-1"><span className="font-medium text-gray-700">Event types:</span> {signup.eventTypes}</p>
+                          )}
+                          <p className="text-sm text-gray-700 mt-2"><span className="font-medium text-gray-700">Reason:</span> {signup.reason}</p>
+                          {signup.additionalInfo && (
+                            <p className="text-sm text-gray-600 mt-1"><span className="font-medium text-gray-700">Additional info:</span> {signup.additionalInfo}</p>
+                          )}
+                          <p className="text-xs text-gray-400 mt-2">Applied {formatDate(signup.createdAt)}</p>
+                        </div>
+                        {signup.status === "pending" && (
+                          <div className="flex gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const approved = await confirm({ title: "Approve organizer", message: "Approve this user as an organizer? They will be able to create events.", confirmLabel: "Approve", cancelLabel: "Cancel" });
+                                if (!approved) return;
+                                setOrganizerSignupActionId(signup.id);
+                                try {
+                                  await updateOrganizerSignup(signup.id, "approve");
+                                  await loadOrganizerSignups();
+                                } catch (e) {
+                                  toast(e.message || "Failed to approve", "error");
+                                } finally {
+                                  setOrganizerSignupActionId(null);
+                                }
+                              }}
+                              disabled={organizerSignupActionId !== null}
+                              className="px-4 py-2 bg-[#2e6b4e] text-white rounded-lg text-sm font-medium hover:bg-[#255a43] disabled:opacity-50"
+                            >
+                              {organizerSignupActionId === signup.id ? "..." : "Approve"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const rejected = await confirm({ title: "Reject application", message: "Reject this organizer application?", confirmLabel: "Reject", cancelLabel: "Cancel", variant: "danger" });
+                                if (!rejected) return;
+                                setOrganizerSignupActionId(signup.id);
+                                try {
+                                  await updateOrganizerSignup(signup.id, "reject");
+                                  await loadOrganizerSignups();
+                                } catch (e) {
+                                  toast(e.message || "Failed to reject", "error");
+                                } finally {
+                                  setOrganizerSignupActionId(null);
+                                }
+                              }}
+                              disabled={organizerSignupActionId !== null}
+                              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+                            >
+                              {organizerSignupActionId === signup.id ? "..." : "Reject"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -1633,305 +1637,207 @@ function AdminDashboardPage() {
 
           {/* Customize Section */}
           {activeTab === "customize" && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-end">
+            <div className="space-y-8">
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Customize site</h2>
+                  <p className="text-gray-500 mt-1">Hero, colors, and home page content.</p>
+                </div>
                 <button
                   type="button"
                   onClick={() => loadCustomizeData()}
                   disabled={customizeLoading}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 transition-colors shadow-sm"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
                   Refresh settings
                 </button>
               </div>
+
               {customizeLoading ? (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-2"></div>
-                  <p className="text-gray-600">Loading settings...</p>
+                <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center shadow-sm">
+                  <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#2e6b4e] border-t-transparent mx-auto mb-4" />
+                  <p className="text-gray-600 font-medium">Loading settings…</p>
                 </div>
               ) : (
-                <>
-                  {/* Hero Section */}
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Hero Section</h2>
-                    <div className="space-y-4">
+                <div className="space-y-8">
+                  {/* Hero Section Card */}
+                  <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                    <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#2e6b4e]/10 text-[#2e6b4e]">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-900">Hero section</h3>
+                          <p className="text-sm text-gray-500">Background and banner at the top of the home page.</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-6 space-y-6">
+                      {/* Live preview strip */}
+                      <div className="rounded-xl overflow-hidden border border-gray-200 shadow-inner" style={{ height: "80px" }}>
+                        {hero.type === "image" && hero.image ? (
+                          <img
+                            src={getImageUrl(hero.image)}
+                            alt="Hero preview"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div
+                            className="w-full h-full"
+                            style={{ backgroundColor: hero.color || "#2e6b4e" }}
+                          />
+                        )}
+                      </div>
+
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Background Type</label>
-                        <div className="flex gap-4">
-                          <label className="flex items-center gap-2 cursor-pointer">
+                        <label className="block text-sm font-semibold text-gray-800 mb-3">Background type</label>
+                        <div className="flex gap-6">
+                          <label className="flex items-center gap-3 cursor-pointer group">
                             <input
                               type="radio"
                               name="heroType"
                               checked={hero.type === "color"}
                               onChange={() => handleHeroTypeChange("color")}
-                              className="text-[#2e6b4e]"
+                              className="w-4 h-4 text-[#2e6b4e] border-gray-300 focus:ring-[#2e6b4e]"
                             />
-                            <span>Solid Color</span>
+                            <span className="text-gray-700 font-medium group-hover:text-gray-900">Solid color</span>
                           </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
+                          <label className="flex items-center gap-3 cursor-pointer group">
                             <input
                               type="radio"
                               name="heroType"
                               checked={hero.type === "image"}
                               onChange={() => handleHeroTypeChange("image")}
-                              className="text-[#2e6b4e]"
+                              className="w-4 h-4 text-[#2e6b4e] border-gray-300 focus:ring-[#2e6b4e]"
                             />
-                            <span>Image</span>
+                            <span className="text-gray-700 font-medium group-hover:text-gray-900">Image</span>
                           </label>
                         </div>
                       </div>
+
                       {hero.type === "color" && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Color</label>
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="color"
-                              value={hero.color || "#2e6b4e"}
-                              onChange={handleHeroColorChange}
-                              className="w-12 h-12 rounded border border-gray-300 cursor-pointer"
-                            />
-                            <input
-                              type="text"
-                              value={hero.color || "#2e6b4e"}
-                              onChange={(e) => setHero((prev) => ({ ...prev, color: e.target.value }))}
-                              className="px-3 py-2 border border-gray-300 rounded-lg w-28 font-mono"
-                            />
-                          </div>
-                        </div>
-                      )}
-                      {hero.type === "image" && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Hero Image</label>
-                          {hero.image && (
-                            <div className="mb-3">
-                              <img
-                                src={getImageUrl(hero.image)}
-                                alt="Hero preview"
-                                className="max-h-40 rounded-lg border border-gray-200 object-cover"
-                              />
-                            </div>
-                          )}
+                        <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl bg-gray-50 border border-gray-100">
+                          <label className="block text-sm font-medium text-gray-700">Color</label>
                           <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handleHeroImageUpload}
-                            disabled={customizeSaving}
-                            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-[#2e6b4e] file:text-white hover:file:bg-[#255a43]"
+                            type="color"
+                            value={hero.color || "#2e6b4e"}
+                            onChange={handleHeroColorChange}
+                            className="w-14 h-14 rounded-xl border-2 border-gray-200 cursor-pointer shadow-sm"
+                          />
+                          <input
+                            type="text"
+                            value={hero.color || "#2e6b4e"}
+                            onChange={(e) => setHero((prev) => ({ ...prev, color: e.target.value || "#2e6b4e" }))}
+                            className="px-4 py-2.5 border border-gray-300 rounded-xl w-28 font-mono text-sm focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
                           />
                         </div>
                       )}
-                      <button
-                        type="button"
-                        onClick={handleSaveHero}
-                        disabled={customizeSaving}
-                        className="px-4 py-2 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] disabled:opacity-50"
-                      >
-                        {customizeSaving ? "Saving..." : "Save Hero"}
-                      </button>
-                      {heroSaveStatus === "success" && (
-                        <p className="text-sm text-green-600 mt-2" role="status">{heroSaveMessage}</p>
+
+                      {hero.type === "image" && (
+                        <div className="space-y-3">
+                          <label className="block text-sm font-medium text-gray-700">Hero image</label>
+                          {hero.image && (
+                            <img
+                              src={getImageUrl(hero.image)}
+                              alt="Hero preview"
+                              className="max-h-44 w-full rounded-xl border border-gray-200 object-cover shadow-sm"
+                            />
+                          )}
+                          <label className="flex flex-col gap-2">
+                            <span className="text-sm text-gray-500">Choose an image (upload saves automatically)</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleHeroImageUpload}
+                              disabled={customizeSaving}
+                              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-[#2e6b4e] file:text-white file:cursor-pointer hover:file:bg-[#255a43] transition-colors"
+                            />
+                          </label>
+                        </div>
                       )}
-                      {heroSaveStatus === "error" && (
-                        <p className="text-sm text-red-600 mt-2" role="alert">{heroSaveMessage}</p>
-                      )}
+
+                      <div className="flex items-center gap-4 pt-2">
+                        <button
+                          type="button"
+                          onClick={handleSaveHero}
+                          disabled={customizeSaving}
+                          className="px-5 py-2.5 bg-[#2e6b4e] text-white rounded-xl font-semibold hover:bg-[#255a43] disabled:opacity-50 transition-colors shadow-sm"
+                        >
+                          {customizeSaving ? "Saving…" : "Save hero"}
+                        </button>
+                        {heroSaveStatus === "success" && (
+                          <span className="inline-flex items-center gap-1.5 text-sm text-green-600 font-medium" role="status">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6L9 17l-5-5"/></svg>
+                            {heroSaveMessage}
+                          </span>
+                        )}
+                        {heroSaveStatus === "error" && (
+                          <span className="inline-flex items-center gap-1.5 text-sm text-red-600 font-medium" role="alert">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+                            {heroSaveMessage}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Content Section */}
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Editable Content</h2>
-                    <p className="text-sm text-gray-600 mb-4">Edit text blocks displayed on the home page.</p>
-                    <div className="space-y-4">
+                  {/* Editable Content Card */}
+                  <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                    <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#2e6b4e]/10 text-[#2e6b4e]">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-900">Editable content</h3>
+                          <p className="text-sm text-gray-500">Headlines and text blocks on the home page.</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-6 space-y-5">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Hero Headline</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Hero headline</label>
                         <input
                           type="text"
                           value={content.home_hero_headline || ""}
                           onChange={(e) => setContent((prev) => ({ ...prev, home_hero_headline: e.target.value }))}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
                           placeholder="Find your next event"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Hero Subheadline</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Hero subheadline</label>
                         <input
                           type="text"
                           value={content.home_hero_subheadline || ""}
                           onChange={(e) => setContent((prev) => ({ ...prev, home_hero_subheadline: e.target.value }))}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
                           placeholder="Discover events near you"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">About Title</label>
-                        <input
-                          type="text"
-                          value={content.home_about_title || ""}
-                          onChange={(e) => setContent((prev) => ({ ...prev, home_about_title: e.target.value }))}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
-                          placeholder="About Eventure"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">About Body</label>
-                        <textarea
-                          value={content.home_about_body || ""}
-                          onChange={(e) => setContent((prev) => ({ ...prev, home_about_body: e.target.value }))}
-                          rows={4}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
-                          placeholder="Describe your platform..."
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Founders Photo (How Eventure Started)</label>
-                        <p className="text-xs text-gray-500 mb-2">Upload a photo to show in the &quot;How Eventure Started&quot; section on the home page. It is stored on the server so it appears for all users.</p>
-                        {content.home_founders_image ? (
-                          <div className="flex items-center gap-4 mb-2">
-                            <img src={getImageUrl(content.home_founders_image)} alt="Founders" className="h-20 w-auto rounded-lg border border-gray-200 object-contain" />
-                            <button type="button" onClick={() => setContent((prev) => ({ ...prev, home_founders_image: "" }))} className="text-sm text-red-600 hover:underline">Remove</button>
-                          </div>
-                        ) : null}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-[#2e6b4e] file:text-white file:cursor-pointer hover:file:bg-[#255a43]"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            try {
-                              const res = await uploadFoundersImage(file);
-                              if (res?.url) setContent((prev) => ({ ...prev, home_founders_image: res.url }));
-                              e.target.value = "";
-                            } catch (err) {
-                              alert(err.message || "Upload failed");
-                            }
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Most Attended Title</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Most attended title</label>
                         <input
                           type="text"
                           value={content.home_most_attended_title || ""}
                           onChange={(e) => setContent((prev) => ({ ...prev, home_most_attended_title: e.target.value }))}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
                           placeholder="Most Attended Event"
                         />
                       </div>
                       <button
                         onClick={handleSaveContent}
                         disabled={customizeSaving}
-                        className="px-4 py-2 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] disabled:opacity-50"
+                        className="px-5 py-2.5 bg-[#2e6b4e] text-white rounded-xl font-semibold hover:bg-[#255a43] disabled:opacity-50 transition-colors shadow-sm"
                       >
-                        {customizeSaving ? "Saving..." : "Save Content"}
+                        {customizeSaving ? "Saving…" : "Save content"}
                       </button>
                     </div>
                   </div>
-
-                  {/* Categories Section */}
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Categories</h2>
-                    <p className="text-sm text-gray-600 mb-4">Manage event categories shown in filters and category pages.</p>
-                    <div className="flex gap-2 mb-4">
-                      <input
-                        type="text"
-                        value={newCategoryName}
-                        onChange={(e) => setNewCategoryName(e.target.value)}
-                        placeholder="New category name"
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
-                        onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
-                      />
-                      <button
-                        onClick={handleAddCategory}
-                        disabled={customizeSaving || !newCategoryName.trim()}
-                        className="px-4 py-2 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] disabled:opacity-50"
-                      >
-                        Add
-                      </button>
-                    </div>
-                    <ul className="space-y-2">
-                      {adminCategories.map((cat) => (
-                        <li key={cat.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
-                          {editingCategoryId === cat.id ? (
-                            <>
-                              <input
-                                type="text"
-                                value={editingCategoryName}
-                                onChange={(e) => setEditingCategoryName(e.target.value)}
-                                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg mr-2"
-                                autoFocus
-                              />
-                              <button
-                                onClick={() => handleUpdateCategory(cat.id)}
-                                disabled={customizeSaving}
-                                className="px-3 py-1 bg-green-600 text-white rounded text-sm mr-1"
-                              >
-                                Save
-                              </button>
-                              <button
-                                onClick={() => { setEditingCategoryId(null); setEditingCategoryName(""); }}
-                                className="px-3 py-1 bg-gray-400 text-white rounded text-sm"
-                              >
-                                Cancel
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <span className="font-medium text-gray-900">{cat.name}</span>
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => { setEditingCategoryId(cat.id); setEditingCategoryName(cat.name); }}
-                                  className="text-[#2e6b4e] hover:text-[#255a43] text-sm font-medium"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteCategory(cat.id)}
-                                  disabled={customizeSaving}
-                                  className="text-red-600 hover:text-red-800 text-sm font-medium disabled:opacity-50"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                    {adminCategories.length === 0 && (
-                      <p className="text-gray-500 text-sm py-4">No categories yet. Add one above.</p>
-                    )}
-                  </div>
-
-                  {/* Map coordinates backfill */}
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Map coordinates</h2>
-                    <p className="text-sm text-gray-600 mb-4">
-                      Events missing lat/lng show a pin based on geocoding when the page loads. Run this once to save coordinates for all events so map pins stay accurate.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleBackfillCoordinates}
-                      disabled={backfillLoading}
-                      className="px-4 py-2 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] disabled:opacity-50 flex items-center gap-2"
-                    >
-                      {backfillLoading ? (
-                        <>
-                          <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                          Backfilling…
-                        </>
-                      ) : (
-                        "Backfill map coordinates"
-                      )}
-                    </button>
-                    {backfillResult && (
-                      <p className="text-sm text-gray-600 mt-3">
-                        Updated: {backfillResult.updated}, Failed: {backfillResult.failed}, Total: {backfillResult.total}
-                      </p>
-                    )}
-                  </div>
-                </>
+                </div>
               )}
             </div>
           )}
@@ -2000,17 +1906,38 @@ function AdminDashboardPage() {
                       </div>
                       <div>
                         <p className="text-sm text-gray-600">Role</p>
-                        <span
-                          className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${
-                            userDetails.user.role === "admin"
-                              ? "bg-purple-100 text-purple-800"
-                              : userDetails.user.role === "organizer"
-                              ? "bg-blue-100 text-blue-800"
-                              : "bg-gray-100 text-gray-800"
-                          }`}
-                        >
-                          {userDetails.user.role}
-                        </span>
+                        {userDetails.user.role === "admin" ? (
+                          <span className="inline-block px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
+                            admin
+                          </span>
+                        ) : (
+                          <select
+                            value={userDetails.user.role}
+                            disabled={userRoleUpdatingId === selectedUser}
+                            onChange={async (e) => {
+                              const newRole = e.target.value;
+                              if (newRole === userDetails.user.role) return;
+                              setUserRoleUpdatingId(selectedUser);
+                              try {
+                                await updateUserRole(selectedUser, newRole);
+                                setUserDetails((prev) =>
+                                  prev ? { ...prev, user: { ...prev.user, role: newRole } } : null
+                                );
+                                setUsers((prev) =>
+                                  prev.map((u) => (u.id === selectedUser ? { ...u, role: newRole } : u))
+                                );
+                              } catch (err) {
+                                toast(err.message || "Failed to update role", "error");
+                              } finally {
+                                setUserRoleUpdatingId(null);
+                              }
+                            }}
+                            className="mt-0.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-800 focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent disabled:opacity-50 cursor-pointer"
+                          >
+                            <option value="user">user</option>
+                            <option value="organizer">organizer</option>
+                          </select>
+                        )}
                       </div>
                       <div>
                         <p className="text-sm text-gray-600">Joined</p>
@@ -2161,7 +2088,7 @@ function AdminDashboardPage() {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleUnattendUser(event.id);
+                                    openUnattendModal(event.id, event.title);
                                   }}
                                   className="px-3 py-1 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
                                   title="Unattend user from event"
@@ -2208,6 +2135,156 @@ function AdminDashboardPage() {
                   )}
                 </>
               ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Event Details Modal (Admin) */}
+      {selectedEventId != null && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={closeEventDetail} role="dialog" aria-modal="true" aria-labelledby="event-detail-title">
+          <div
+            className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 sm:p-6 border-b border-[#e2e8f0] flex items-center justify-between shrink-0">
+              <h2 id="event-detail-title" className="text-xl font-bold text-[#0f172b]">Event details</h2>
+              <button type="button" onClick={closeEventDetail} className="p-2 rounded-lg text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#0f172b]" aria-label="Close">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-6">
+              {eventDetailsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#2e6b4e] border-t-transparent" />
+                </div>
+              ) : eventDetails?.event ? (
+                <>
+                  <div>
+                    <h3 className="text-lg font-semibold text-[#0f172b] mb-1">{eventDetails.event.title}</h3>
+                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getCategoryColor(eventDetails.event.category)}`}>
+                        {eventDetails.event.category}
+                      </span>
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(eventDetails.event.status)}`}>
+                        {eventDetails.event.status}
+                      </span>
+                      {eventDetails.event.ticket_price != null && Number(eventDetails.event.ticket_price) > 0 ? (
+                        <span className="text-sm text-[#475569]">${Number(eventDetails.event.ticket_price).toFixed(2)}</span>
+                      ) : (
+                        <span className="text-xs text-emerald-600 font-medium">Free</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {eventDetails.event.description && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-[#64748b] uppercase tracking-wide mb-1">Description</h4>
+                      <p className="text-[#475569] text-sm whitespace-pre-wrap">{eventDetails.event.description}</p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <h4 className="text-sm font-semibold text-[#64748b] uppercase tracking-wide mb-1">When posted</h4>
+                      <p className="text-[#0f172b] font-medium">{formatDateTime(eventDetails.event.created_at)}</p>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-[#64748b] uppercase tracking-wide mb-1">Status</h4>
+                      <p className="text-[#0f172b] font-medium capitalize">{eventDetails.event.status}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-[#64748b] uppercase tracking-wide mb-1">Event date & time</h4>
+                      <p className="text-[#0f172b] font-medium">{formatDateTime(eventDetails.event.starts_at)}</p>
+                    {eventDetails.event.ends_at && <p className="text-[#64748b] text-sm">to {formatDateTime(eventDetails.event.ends_at)}</p>}
+                  </div>
+
+                  <div>
+                    <h4 className="text-sm font-semibold text-[#64748b] uppercase tracking-wide mb-1">Organizer</h4>
+                    <p className="text-[#0f172b] font-medium">{eventDetails.event.organizer_name || "—"}</p>
+                    {eventDetails.event.organizer_email && <p className="text-[#64748b] text-sm">{eventDetails.event.organizer_email}</p>}
+                  </div>
+
+                  {(eventDetails.event.venue || eventDetails.event.address_line1 || eventDetails.event.city) && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-[#64748b] uppercase tracking-wide mb-1">Location</h4>
+                      <p className="text-[#0f172b] text-sm">
+                        {[eventDetails.event.venue, eventDetails.event.address_line1, [eventDetails.event.city, eventDetails.event.state].filter(Boolean).join(", "), eventDetails.event.zip_code].filter(Boolean).join(" · ")}
+                      </p>
+                    </div>
+                  )}
+
+                  <div>
+                    <h4 className="text-sm font-semibold text-[#64748b] uppercase tracking-wide mb-2">Attendees ({eventDetails.attendees?.length ?? 0})</h4>
+                    {eventDetails.attendees?.length > 0 ? (
+                      <div className="border border-[#e2e8f0] rounded-xl overflow-hidden">
+                        <div className="max-h-48 overflow-y-auto">
+                          <table className="w-full text-left text-sm">
+                            <thead className="bg-[#f8fafc] sticky top-0">
+                              <tr>
+                                <th className="px-3 py-2 font-medium text-[#64748b]">Name</th>
+                                <th className="px-3 py-2 font-medium text-[#64748b]">Email</th>
+                                <th className="px-3 py-2 font-medium text-[#64748b]">Signed up</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[#e2e8f0]">
+                              {eventDetails.attendees.map((a) => (
+                                <tr key={a.rsvp_id}>
+                                  <td className="px-3 py-2 font-medium text-[#0f172b]">{[a.first_name, a.last_name].filter(Boolean).join(" ") || "—"}</td>
+                                  <td className="px-3 py-2 text-[#475569]">{a.email || "—"}</td>
+                                  <td className="px-3 py-2 text-[#64748b]">{formatDateTime(a.signed_up_at)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-[#64748b] text-sm py-2">No attendees yet.</p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-[#e2e8f0]">
+                    <button type="button" onClick={() => handleDeleteEventAndClose(eventDetails.event.id)} className="px-4 py-2 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors">
+                      Delete event
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-[#64748b] py-4">Could not load event details.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unattend user reason modal */}
+      {unattendModal.open && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50" onClick={closeUnattendModal}>
+          <div className="bg-white rounded-xl shadow-xl border border-gray-200 max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Unattend user from event</h3>
+            {unattendModal.eventTitle && <p className="text-sm text-gray-600 mb-4">{unattendModal.eventTitle}</p>}
+            <label className="block text-sm font-medium text-gray-700 mb-2">Reason (required)</label>
+            <textarea
+              value={unattendReason}
+              onChange={(e) => setUnattendReason(e.target.value)}
+              placeholder="Provide a reason for unattending this user..."
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2e6b4e] focus:border-[#2e6b4e] text-sm"
+            />
+            <div className="flex justify-end gap-2 mt-4">
+              <button type="button" onClick={closeUnattendModal} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleUnattendUser}
+                disabled={!unattendReason.trim() || unattendSubmitting}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:pointer-events-none"
+              >
+                {unattendSubmitting ? "Unattending…" : "Unattend"}
+              </button>
             </div>
           </div>
         </div>
